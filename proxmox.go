@@ -1,5 +1,9 @@
 package dockermachinedriverproxmoxve
 
+// This file is most copy & pasted from my private project to
+// auto-generate the API client on basis of the JSON described API
+// in https://pve.proxmox.com/pve-docs/api-viewer/apidoc.js
+
 import (
 	"crypto/tls"
 	"encoding/json"
@@ -9,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/docker/machine/libmachine/state"
+	"github.com/labstack/gommon/log"
 	resty "gopkg.in/resty.v1"
 )
 
@@ -294,6 +300,7 @@ type NodesNodeQemuPostParameter struct {
 	SCSI0     string // optional, Use volume as VIRTIO hard disk (n is 0 to 15).
 	Ostype    string // optional, Specify guest operating system.
 	KVM       string // optional, Enable/disable KVM hardware virtualization.
+	Pool      string // optional, Add the VM to the specified pool.
 	Cores     string // optional, The number of cores per socket.
 	Cdrom     string // optional, This is an alias for option -ide2
 }
@@ -371,4 +378,61 @@ func (p ProxmoxVE) NodesNodeQemuPost(node string, input *NodesNodeQemuPostParame
 	path := fmt.Sprintf("/nodes/%s/qemu", node)
 	err := p.post(input, nil, path)
 	return err
+}
+
+// NodesNodeQemuVMIDStatusStartPost access the API
+// Start virtual machine.
+func (p ProxmoxVE) NodesNodeQemuVMIDStatusStartPost(node string, vmid string) error {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/start", node, vmid)
+	err := p.post(nil, nil, path)
+	return err
+}
+
+// NodesNodeQemuVMIDAgentPostParameter represents the input data for /nodes/{node}/qemu/{vmid}/agent
+// Original Description:
+// Execute Qemu Guest Agent commands.
+type NodesNodeQemuVMIDAgentPostParameter struct {
+	Command string // The QGA command.
+}
+
+// NodesNodeQemuVMIDAgentPost access the API
+// Execute Qemu Guest Agent commands.
+func (p ProxmoxVE) NodesNodeQemuVMIDAgentPost(node string, vmid string, input *NodesNodeQemuVMIDAgentPostParameter) error {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/agent", node, vmid)
+	err := p.post(input, nil, path)
+	return err
+}
+
+// NodesNodeQemuVMIDStatusCurrentGet access the API
+// Get virtual machine status.
+func (p ProxmoxVE) NodesNodeQemuVMIDStatusCurrentGet(node string, vmid string) (state.State, error) {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/current", node, vmid)
+	response, err := p.client.R().Get(p.getURL(path))
+	var f map[string]interface{}
+
+	err = json.Unmarshal([]byte(response.String()), &f)
+	if err != nil {
+		return state.Paused, err
+	}
+
+	zz, err := json.Marshal(f["data"])
+	if err != nil {
+		return state.Paused, err
+	}
+
+	err = json.Unmarshal(zz, &f)
+	if err != nil {
+		return state.Paused, err
+	}
+
+	log.Warnf("Status is '%s'", f["status"])
+
+	switch f["status"] {
+	case "running":
+		return state.Running, nil
+	case "stopped":
+		return state.Stopped, nil
+	}
+
+	return state.Error, nil
 }

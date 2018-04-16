@@ -3,6 +3,7 @@ package dockermachinedriverproxmoxve
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/mcnflag"
@@ -13,6 +14,7 @@ import (
 // Driver for Proxmox VE
 type Driver struct {
 	*drivers.BaseDriver
+	driver *ProxmoxVE
 
 	// Basic Authentication for Proxmox VE
 	Host     string // Host to connect to
@@ -24,9 +26,29 @@ type Driver struct {
 	// File to load as boot image RancherOS/Boot2Docker
 	ImageFile string // in the format <storagename>:iso/<filename>.iso
 
-	Storage  string // internal PVE storage name
-	DiskSize string // disk size in GB
-	Memory   int    // memory in GB
+	Pool        string // pool to add the VM to (necessary for users with only pool permission)
+	Storage     string // internal PVE storage name
+	StorageType string // Type of the storage (currently QCOW2 and RAW)
+	DiskSize    string // disk size in GB
+	Memory      int    // memory in GB
+
+	VMID string // VM ID only filled by create()
+}
+
+func (d *Driver) connectAPI() error {
+	if d.driver == nil {
+		log.Warn("Create called")
+
+		log.Warnf("Connecting to %s as %s@%s with password '%s'\n", d.Host, d.User, d.Realm, d.Password)
+		c, err := GetProxmoxVEConnectionByValues(d.User, d.Password, d.Realm, d.Host)
+		d.driver = c
+
+		if err != nil {
+			return err
+		}
+		log.Warn("Connected to version '" + d.driver.Version + "'")
+	}
+	return nil
 }
 
 func (d *Driver) GetCreateFlags() []mcnflag.Flag {
@@ -85,7 +107,35 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Usage:  "storage of the image file (e.g. local:iso/rancheros.iso)",
 			Value:  "",
 		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOX_POOL",
+			Name:   "proxmox-pool",
+			Usage:  "pool to attach to",
+			Value:  "",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOX_STORAGE_TYPE",
+			Name:   "proxmox-storage-type",
+			Usage:  "storage type to use (QCOW2 or RAW)",
+			Value:  "qcow2",
+		},
 	}
+}
+
+func (d *Driver) ping() bool {
+	if d.driver == nil {
+		return false
+	}
+
+	command := NodesNodeQemuVMIDAgentPostParameter{Command: "ping"}
+	err := d.driver.NodesNodeQemuVMIDAgentPost(d.Node, d.VMID, &command)
+
+	if err != nil {
+		log.Warn(err)
+		return false
+	}
+
+	return true
 }
 
 // DriverName returns the name of the driver
@@ -103,9 +153,11 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	}
 	d.User = flags.String("proxmox-user")
 	d.Realm = flags.String("proxmox-realm")
+	d.Pool = flags.String("proxmox-pool")
 	d.Password = flags.String("proxmox-password")
 	d.DiskSize = flags.String("proxmox-disksize-gb")
 	d.Storage = flags.String("proxmox-storage")
+	d.StorageType = strings.ToLower(flags.String("proxmox-storage-type"))
 	d.Memory = flags.Int("proxmox-memory-gb")
 	d.Memory *= 1024
 
@@ -168,69 +220,83 @@ func (d *Driver) GetSSHUsername() string {
 }
 
 func (d *Driver) GetState() (state.State, error) {
+	if d.ping() {
+		return state.Running, nil
+	}
 	return state.Paused, nil
 }
 
 func (d *Driver) Create() error {
-	log.Warn("Create called")
 
-	log.Warnf("Connecting to %s as %s@%s with password '%s'\n", d.Host, d.User, d.Realm, d.Password)
-	c, err := GetProxmoxVEConnectionByValues(d.User, d.Password, d.Realm, d.Host)
-
+	err := d.connectAPI()
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
-	log.Warn("Connected to version '" + c.Version + "'")
 
 	log.Warnf("Retrieving next ID\n")
-	id, err := c.ClusterNextIDGet(0)
+	id, err := d.driver.ClusterNextIDGet(0)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
 	log.Warnf("Next ID was '%s'\n", id)
+	d.VMID = id
 
 	volume := NodesNodeStorageStorageContentPostParameter{
-		Filename: "vm-" + id + "-disk-1.qcow2",
+		Filename: "vm-" + id + "-disk-1",
 		Size:     d.DiskSize + "G",
-		VMID:     id,
+		VMID:     d.VMID,
+	}
+
+	if d.StorageType == "qcow2" {
+		volume.Filename += ".qcow2"
 	}
 
 	log.Warnf("Creating disk volume '%s' with size '%s'\n", volume.Filename, volume.Size)
-	err = c.NodesNodeStorageStorageContentPost(d.Node, d.Storage, &volume)
+	err = d.driver.NodesNodeStorageStorageContentPost(d.Node, d.Storage, &volume)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
 
 	npp := NodesNodeQemuPostParameter{
-		VMID:      id,
+		VMID:      d.VMID,
 		Agent:     "1",
 		Autostart: "1",
 		Memory:    d.Memory,
 		Cores:     "4",
 		Net0:      "virtio,bridge=vmbr0",
-		SCSI0:     d.Storage + ":" + id + "/" + volume.Filename,
+		SCSI0:     d.Storage + ":" + volume.Filename,
 		Ostype:    "l26",
 		Name:      d.BaseDriver.MachineName,
 		KVM:       "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization
 		Cdrom:     d.ImageFile,
+		Pool:      d.Pool,
+	}
+
+	if d.StorageType == "qcow2" {
+		npp.SCSI0 = d.Storage + ":" + id + "/" + volume.Filename
 	}
 	log.Warnf("Creating VM '%s' with '%d' of memory\n", npp.VMID, npp.Memory)
-	err = c.NodesNodeQemuPost(d.Node, &npp)
+	err = d.driver.NodesNodeQemuPost(d.Node, &npp)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
 
-	log.Debugf("Create finished\n")
-	os.Exit(0)
+	d.Start()
+
 	return nil
 }
 
 func (d *Driver) Start() error {
-	//d.MockState = state.Running
+	err := d.connectAPI()
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+	d.driver.NodesNodeQemuVMIDStatusStartPost(d.Node, d.VMID)
 	return nil
 }
 
@@ -240,6 +306,8 @@ func (d *Driver) Stop() error {
 }
 
 func (d *Driver) Restart() error {
+	d.Stop()
+	d.Start()
 	//d.MockState = state.Running
 	return nil
 }
