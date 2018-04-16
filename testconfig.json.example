@@ -1,0 +1,7 @@
+{
+    "host":"10.255.0.5",
+    "user":"root",
+    "realm": "pam",
+    "password":"P@ssw0rd",
+    "node": "pve"
+}

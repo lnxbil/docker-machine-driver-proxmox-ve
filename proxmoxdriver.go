@@ -1,4 +1,4 @@
-package dockermachinedriverproxmox
+package dockermachinedriverproxmoxve
 
 import (
 	"fmt"
@@ -8,17 +8,25 @@ import (
 	"github.com/docker/machine/libmachine/mcnflag"
 	"github.com/docker/machine/libmachine/state"
 	"github.com/labstack/gommon/log"
-	"github.com/lnxbil/goproxmoxapi"
 )
 
+// Driver for Proxmox VE
 type Driver struct {
 	*drivers.BaseDriver
 
-	Host           string
-	User           string
-	Realm          string
-	Password       string
-	Boot2DockerURL string
+	// Basic Authentication for Proxmox VE
+	Host     string // Host to connect to
+	Node     string // optional, node to create VM on, host used if omitted but must match internal node name
+	User     string // username
+	Password string // password
+	Realm    string // realm, e.g. pam, pve, etc.
+
+	// File to load as boot image RancherOS/Boot2Docker
+	ImageFile string // in the format <storagename>:iso/<filename>.iso
+
+	Storage  string // internal PVE storage name
+	DiskSize string // disk size in GB
+	Memory   int    // memory in GB
 }
 
 func (d *Driver) GetCreateFlags() []mcnflag.Flag {
@@ -28,6 +36,30 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:   "proxmox-host",
 			Usage:  "Host to connect to",
 			Value:  "192.168.1.253",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOX_DISKSIZE_GB",
+			Name:   "proxmox-disksize-gb",
+			Usage:  "disk size in GB",
+			Value:  "16",
+		},
+		mcnflag.IntFlag{
+			EnvVar: "PROXMOX_MEMORY_GB",
+			Name:   "proxmox-memory-gb",
+			Usage:  "memory in GB",
+			Value:  8,
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOX_STORAGE",
+			Name:   "proxmox-storage",
+			Usage:  "storage to create the VM volume on",
+			Value:  "local",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOX_NODE",
+			Name:   "proxmox-node",
+			Usage:  "to to use (defaults to host)",
+			Value:  "",
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOX_USER",
@@ -48,9 +80,9 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  "",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOX_BOOT2DOCKER_FILE",
-			Name:   "proxmox-boot2docker-file",
-			Usage:  "Storage path",
+			EnvVar: "PROXMOX_IMAGE_FILE",
+			Name:   "proxmox-image-file",
+			Usage:  "storage of the image file (e.g. local:iso/rancheros.iso)",
 			Value:  "",
 		},
 	}
@@ -63,11 +95,19 @@ func (d *Driver) DriverName() string {
 
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	log.Debugf("SetConfigFromFlags called")
-	d.Boot2DockerURL = flags.String("proxmox-boot2docker-url")
+	d.ImageFile = flags.String("proxmox-image-file")
 	d.Host = flags.String("proxmox-host")
+	d.Node = flags.String("proxmox-node")
+	if len(d.Node) == 0 {
+		d.Node = d.Host
+	}
 	d.User = flags.String("proxmox-user")
 	d.Realm = flags.String("proxmox-realm")
 	d.Password = flags.String("proxmox-password")
+	d.DiskSize = flags.String("proxmox-disksize-gb")
+	d.Storage = flags.String("proxmox-storage")
+	d.Memory = flags.Int("proxmox-memory-gb")
+	d.Memory *= 1024
 
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
@@ -135,16 +175,56 @@ func (d *Driver) Create() error {
 	log.Warn("Create called")
 
 	log.Warnf("Connecting to %s as %s@%s with password '%s'\n", d.Host, d.User, d.Realm, d.Password)
-	c, err := goproxmoxapi.New(d.User, d.Password, d.Realm, d.Host)
+	c, err := GetProxmoxVEConnectionByValues(d.User, d.Password, d.Realm, d.Host)
 
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
-	v, err := goproxmoxapi.GetVersion(c)
-	log.Warn("Connected to version '" + v.Version + "'")
+	log.Warn("Connected to version '" + c.Version + "'")
 
-	log.Debugf("Create finished")
+	log.Warnf("Retrieving next ID\n")
+	id, err := c.ClusterNextIDGet(0)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+	log.Warnf("Next ID was '%s'\n", id)
+
+	volume := NodesNodeStorageStorageContentPostParameter{
+		Filename: "vm-" + id + "-disk-1.qcow2",
+		Size:     d.DiskSize + "G",
+		VMID:     id,
+	}
+
+	log.Warnf("Creating disk volume '%s' with size '%s'\n", volume.Filename, volume.Size)
+	err = c.NodesNodeStorageStorageContentPost(d.Node, d.Storage, &volume)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	npp := NodesNodeQemuPostParameter{
+		VMID:      id,
+		Agent:     "1",
+		Autostart: "1",
+		Memory:    d.Memory,
+		Cores:     "4",
+		Net0:      "virtio,bridge=vmbr0",
+		SCSI0:     d.Storage + ":" + id + "/" + volume.Filename,
+		Ostype:    "l26",
+		Name:      d.BaseDriver.MachineName,
+		KVM:       "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization
+		Cdrom:     d.ImageFile,
+	}
+	log.Warnf("Creating VM '%s' with '%d' of memory\n", npp.VMID, npp.Memory)
+	err = c.NodesNodeQemuPost(d.Node, &npp)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	log.Debugf("Create finished\n")
 	os.Exit(0)
 	return nil
 }
