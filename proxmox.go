@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/docker/machine/libmachine/state"
 	"github.com/labstack/gommon/log"
@@ -401,6 +402,84 @@ func (p ProxmoxVE) NodesNodeQemuVMIDAgentPost(node string, vmid string, input *N
 	path := fmt.Sprintf("/nodes/%s/qemu/%s/agent", node, vmid)
 	err := p.post(input, nil, path)
 	return err
+}
+
+// NodesNodeQemuVMIDDelete access the API
+// Destroy the vm (also delete all used/owned volumes).
+func (p ProxmoxVE) NodesNodeQemuVMIDDelete(node string, vmid string) error {
+	p.NodesNodeQemuVMIDStatusStopPost(node, vmid)
+	time.Sleep(time.Second)
+
+	path := fmt.Sprintf("/nodes/%s/qemu/%s", node, vmid)
+	err := p.delete(nil, nil, path)
+	return err
+}
+
+// NodesNodeQemuVMIDStatusStopPost access the API
+// Stop virtual machine. The qemu process will exit immediately. Thisis akin to pulling the power plug of a running computer and may damage the VM data
+func (p ProxmoxVE) NodesNodeQemuVMIDStatusStopPost(node string, vmid string) error {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/stop", node, vmid)
+	err := p.post(nil, nil, path)
+	return err
+}
+
+func unmarshallString(data string, value string) (string, error) {
+	var f map[string]interface{}
+	err := json.Unmarshal([]byte(data), &f)
+	if err != nil {
+		return "", err
+	}
+	zz, err := json.Marshal(f["value"])
+	if err != nil {
+		return "", err
+	}
+	return string(zz), err
+}
+
+type IPReturnDataIP struct {
+	IPAddress     string `json:"ip-address"`
+	IPAddressType string `json:"ip-address-type"`
+	Prefix        int    `json:"prefix"`
+}
+
+type IPReturnData struct {
+	HardwareAddress string           `json:"hardware-address"`
+	Name            string           `json:"name"`
+	IPAdresses      []IPReturnDataIP `json:"ip-addresses"`
+}
+
+type IPReturnDataResult struct {
+	Result []IPReturnData `json:"result"`
+}
+
+type IPReturn struct {
+	Data IPReturnDataResult `json:"data"`
+}
+
+// GetEth0IPv4 access the API
+func (p ProxmoxVE) GetEth0IPv4(node string, vmid string) (string, error) {
+	input := NodesNodeQemuVMIDAgentPostParameter{Command: "network-get-interfaces"}
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/agent", node, vmid)
+
+	response, err := p.client.R().SetQueryParams(p.structToStringMap(&input)).Post(p.getURL(path))
+
+	var a IPReturn
+	resp := response.String()
+	err = json.Unmarshal([]byte(resp), &a)
+	if err != nil {
+		return "", err
+	}
+	for _, nic := range a.Data.Result {
+		if nic.Name == "eth0" {
+			for _, ip := range nic.IPAdresses {
+				if ip.IPAddressType == "ipv4" {
+					return ip.IPAddress, nil
+				}
+			}
+		}
+	}
+
+	return "", err
 }
 
 // NodesNodeQemuVMIDStatusCurrentGet access the API

@@ -183,25 +183,17 @@ func (d *Driver) GetMachineName() string {
 }
 
 func (d *Driver) GetIP() (string, error) {
-	// if d.MockState == state.Error {
-	// 	return "", fmt.Errorf("Unable to get ip")
-	// }
-	// if d.MockState == state.Timeout {
-	// 	select {} // Loop forever
-	// }
-	// if d.MockState != state.Running {
-	// 	return "", drivers.ErrHostIsNotRunning
-	// }
-	return "127.0.0.1", nil
+	d.connectAPI()
+	return d.driver.GetEth0IPv4(d.Node, d.VMID)
 }
 
 func (d *Driver) GetSSHHostname() (string, error) {
-	return "", nil
+	return d.GetIP()
 }
 
-func (d *Driver) GetSSHKeyPath() string {
-	return d.GetSSHKeyPath() + ".pub"
-}
+//func (d *Driver) GetSSHKeyPath() string {
+//	return d.GetSSHKeyPath() + ".pub"
+//}
 
 func (d *Driver) GetSSHPort() (int, error) {
 	if d.SSHPort == 0 {
@@ -293,11 +285,9 @@ func (d *Driver) Create() error {
 func (d *Driver) Start() error {
 	err := d.connectAPI()
 	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
+		return err
 	}
-	d.driver.NodesNodeQemuVMIDStatusStartPost(d.Node, d.VMID)
-	return nil
+	return d.driver.NodesNodeQemuVMIDStatusStartPost(d.Node, d.VMID)
 }
 
 func (d *Driver) Stop() error {
@@ -318,7 +308,11 @@ func (d *Driver) Kill() error {
 }
 
 func (d *Driver) Remove() error {
-	return nil
+	err := d.connectAPI()
+	if err != nil {
+		return err
+	}
+	return d.driver.NodesNodeQemuVMIDDelete(d.Node, d.VMID)
 }
 
 func (d *Driver) Upgrade() error {
