@@ -71,7 +71,7 @@ func EstablishConnection(t *testing.T) *dockermachinedriverproxmoxve.ProxmoxVE {
 	c, err := dockermachinedriverproxmoxve.GetProxmoxVEConnectionByValues(GetProxmoxAccess())
 	if err != nil {
 		t.Log(c)
-		t.Error(err)
+		t.Fatal(err)
 	}
 	return c
 }
