@@ -2,7 +2,6 @@ package dockermachinedriverproxmoxve
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"gopkg.in/resty.v1"
@@ -28,22 +27,36 @@ type Driver struct {
 	// File to load as boot image RancherOS/Boot2Docker
 	ImageFile string // in the format <storagename>:iso/<filename>.iso
 
-	Pool        string // pool to add the VM to (necessary for users with only pool permission)
-	Storage     string // internal PVE storage name
-	StorageType string // Type of the storage (currently QCOW2 and RAW)
-	DiskSize    string // disk size in GB
-	Memory      int    // memory in GB
+	Pool            string // pool to add the VM to (necessary for users with only pool permission)
+	Storage         string // internal PVE storage name
+	StorageType     string // Type of the storage (currently QCOW2 and RAW)
+	DiskSize        string // disk size in GB
+	Memory          int    // memory in GB
+	StorageFilename string
 
 	VMID string // VM ID only filled by create()
 
-	restyDebug bool // enable resty debugging
+	driverDebug bool // driver debugging
+	restyDebug  bool // enable resty debugging
+}
+
+func (d *Driver) debugf(format string, v ...interface{}) {
+	if d.driverDebug {
+		log.Infof(fmt.Sprintf(format, v...))
+	}
+}
+
+func (d *Driver) debug(v ...interface{}) {
+	if d.driverDebug {
+		log.Info(v...)
+	}
 }
 
 func (d *Driver) connectAPI() error {
 	if d.driver == nil {
-		log.Warn("Create called")
+		d.debugf("Create called")
 
-		log.Warnf("Connecting to %s as %s@%s with password '%s'\n", d.Host, d.User, d.Realm, d.Password)
+		d.debugf("Connecting to %s as %s@%s with password '%s'", d.Host, d.User, d.Realm, d.Password)
 		c, err := GetProxmoxVEConnectionByValues(d.User, d.Password, d.Realm, d.Host)
 		d.driver = c
 		if err != nil {
@@ -52,7 +65,7 @@ func (d *Driver) connectAPI() error {
 		if d.restyDebug {
 			c.EnableDebugging()
 		}
-		log.Warn("Connected to version '" + d.driver.Version + "'")
+		d.debugf("Connected to PVE version '" + d.driver.Version + "'")
 	}
 	return nil
 }
@@ -123,11 +136,15 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			EnvVar: "PROXMOX_STORAGE_TYPE",
 			Name:   "proxmox-storage-type",
 			Usage:  "storage type to use (QCOW2 or RAW)",
-			Value:  "qcow2",
+			Value:  "raw",
 		},
 		mcnflag.BoolFlag{
 			Name:  "proxmox-resty-debug",
 			Usage: "enables the resty debugging",
+		},
+		mcnflag.BoolFlag{
+			Name:  "proxmox-driver-debug",
+			Usage: "enables debugging in the driver",
 		},
 	}
 }
@@ -141,7 +158,7 @@ func (d *Driver) ping() bool {
 	err := d.driver.NodesNodeQemuVMIDAgentPost(d.Node, d.VMID, &command)
 
 	if err != nil {
-		log.Warn(err)
+		d.debug(err)
 		return false
 	}
 
@@ -154,7 +171,7 @@ func (d *Driver) DriverName() string {
 }
 
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
-	log.Debugf("SetConfigFromFlags called")
+	d.debug("SetConfigFromFlags called")
 	d.ImageFile = flags.String("proxmox-image-file")
 	d.Host = flags.String("proxmox-host")
 	d.Node = flags.String("proxmox-node")
@@ -174,9 +191,10 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
 
+	d.driverDebug = flags.Bool("proxmox-driver-debug")
 	d.restyDebug = flags.Bool("proxmox-resty-debug")
 	if d.restyDebug {
-		log.Info("enabling Resty debugging")
+		d.debug("enabling Resty debugging")
 		resty.SetDebug(true)
 	}
 
@@ -234,38 +252,65 @@ func (d *Driver) GetState() (state.State, error) {
 	return state.Paused, nil
 }
 
-func (d *Driver) Create() error {
+func (d *Driver) PreCreateCheck() error {
+
+	switch d.StorageType {
+	case "raw":
+		fallthrough
+	case "qcow2":
+		break
+	default:
+		return fmt.Errorf("storage type '%s' is not supported", d.StorageType)
+	}
 
 	err := d.connectAPI()
 	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
+		return err
 	}
 
-	log.Warnf("Retrieving next ID\n")
+	d.debug("Retrieving next ID")
 	id, err := d.driver.ClusterNextIDGet(0)
 	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
+		return err
 	}
-	log.Warnf("Next ID was '%s'\n", id)
+	d.debugf("Next ID was '%s'", id)
 	d.VMID = id
 
+	storageType, err := d.driver.GetStorageType(d.Node, d.Storage)
+	if err != nil {
+		return err
+	}
+
+	filename := "vm-" + d.VMID + "-disk-1"
+	switch storageType {
+	case "lvmthin":
+		fallthrough
+	case "zfs":
+		fallthrough
+	case "ceph":
+		if d.StorageType != "raw" {
+			return fmt.Errorf("type '%s' on storage '%s' does only support raw", storageType, d.Storage)
+		}
+	case "dir":
+		filename += "." + d.StorageType
+	}
+	d.StorageFilename = filename
+
+	return nil
+}
+
+func (d *Driver) Create() error {
+
 	volume := NodesNodeStorageStorageContentPostParameter{
-		Filename: "vm-" + id + "-disk-1",
+		Filename: d.StorageFilename,
 		Size:     d.DiskSize + "G",
 		VMID:     d.VMID,
 	}
 
-	if d.StorageType == "qcow2" {
-		volume.Filename += ".qcow2"
-	}
-
-	log.Warnf("Creating disk volume '%s' with size '%s'\n", volume.Filename, volume.Size)
-	err = d.driver.NodesNodeStorageStorageContentPost(d.Node, d.Storage, &volume)
+	d.debugf("Creating disk volume '%s' with size '%s'", volume.Filename, volume.Size)
+	err := d.driver.NodesNodeStorageStorageContentPost(d.Node, d.Storage, &volume)
 	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
+		return err
 	}
 
 	npp := NodesNodeQemuPostParameter{
@@ -284,13 +329,12 @@ func (d *Driver) Create() error {
 	}
 
 	if d.StorageType == "qcow2" {
-		npp.SCSI0 = d.Storage + ":" + id + "/" + volume.Filename
+		npp.SCSI0 = d.Storage + ":" + d.VMID + "/" + volume.Filename
 	}
-	log.Warnf("Creating VM '%s' with '%d' of memory\n", npp.VMID, npp.Memory)
+	d.debugf("Creating VM '%s' with '%d' of memory", npp.VMID, npp.Memory)
 	err = d.driver.NodesNodeQemuPost(d.Node, &npp)
 	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
+		return err
 	}
 
 	d.Start()

@@ -55,3 +55,48 @@ func TestWrongHost(t *testing.T) {
 		t.Error()
 	}
 }
+
+func checkStorageType(t *testing.T, api *dockermachinedriverproxmoxve.ProxmoxVE, storageName string, shouldStorageType string) error {
+	ret, err := api.GetStorageType(GetProxmoxNode(), storageName)
+	if err != nil {
+		return err
+	}
+	if ret != shouldStorageType {
+		return errors.New(fmt.Sprintf("storage type should have been '%s', but was '%s' for storage '%s'", shouldStorageType, ret, storageName))
+	}
+	return nil
+}
+
+func TestStorageType(t *testing.T) {
+	api := EstablishConnection(t)
+
+	err := checkStorageType(t, api, "local-lvm", "lvmthin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = checkStorageType(t, api, "local", "dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = checkStorageType(t, api, "nfs", "nfs")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = checkStorageType(t, api, "zpool", "zfspool")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = checkStorageType(t, api, "lvm", "lvm")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = checkStorageType(t, api, "not-existent", "2")
+	if err == nil {
+		t.Fatalf("non-existent storage should have raised an error")
+	}
+}

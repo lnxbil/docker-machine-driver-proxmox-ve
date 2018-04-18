@@ -441,24 +441,18 @@ func unmarshallString(data string, value string) (string, error) {
 	return string(zz), err
 }
 
-type IPReturnDataIP struct {
-	IPAddress     string `json:"ip-address"`
-	IPAddressType string `json:"ip-address-type"`
-	Prefix        int    `json:"prefix"`
-}
-
-type IPReturnData struct {
-	HardwareAddress string           `json:"hardware-address"`
-	Name            string           `json:"name"`
-	IPAdresses      []IPReturnDataIP `json:"ip-addresses"`
-}
-
-type IPReturnDataResult struct {
-	Result []IPReturnData `json:"result"`
-}
-
 type IPReturn struct {
-	Data IPReturnDataResult `json:"data"`
+	Data struct {
+		Result []struct {
+			HardwareAddress string `json:"hardware-address"`
+			Name            string `json:"name"`
+			IPAdresses      []struct {
+				IPAddress     string `json:"ip-address"`
+				IPAddressType string `json:"ip-address-type"`
+				Prefix        int    `json:"prefix"`
+			} `json:"ip-addresses"`
+		} `json:"result"`
+	} `json:"data"`
 }
 
 // GetEth0IPv4 access the API
@@ -519,4 +513,53 @@ func (p ProxmoxVE) NodesNodeQemuVMIDStatusCurrentGet(node string, vmid string) (
 	}
 
 	return state.Error, nil
+}
+
+type IntBool bool
+
+func (bit IntBool) UnmarshalJSON(data []byte) error {
+	asString := string(data)
+	if asString == "1" || asString == "true" {
+		bit = true
+	} else if asString == "0" || asString == "false" {
+		bit = false
+	} else {
+		return errors.New(fmt.Sprintf("Boolean unmarshal error: invalid input %s", asString))
+	}
+	return nil
+}
+
+type StorageReturn struct {
+	Data []struct {
+		Active  int     `json:"active"`
+		Avail   int     `json:"avail"`
+		Content string  `json:"content"`
+		Enabled IntBool `json:"enabled"`
+		Shared  IntBool `json:"shared"`
+		Storage string  `json:"storage"`
+		Total   int     `json:"total"`
+		Type    string  `json:"type"`
+		Used    int     `json:"used"`
+	} `json:"data"`
+}
+
+// GetEth0IPv4 access the API
+func (p ProxmoxVE) GetStorageType(node string, storagename string) (string, error) {
+	path := fmt.Sprintf("/nodes/%s/storage", node)
+
+	response, err := p.client.R().Get(p.getURL(path))
+
+	var a StorageReturn
+	resp := response.String()
+	err = json.Unmarshal([]byte(resp), &a)
+	if err != nil {
+		return "", err
+	}
+
+	for _, storage := range a.Data {
+		if storage.Storage == storagename {
+			return storage.Type, nil
+		}
+	}
+	return "", errors.New(fmt.Sprintf("storage '%s' not found", storagename))
 }
