@@ -174,7 +174,7 @@ func (p ProxmoxVE) runMethod(method string, input interface{}, output interface{
 	case "get":
 		response, err = p.client.R().SetQueryParams(p.structToStringMap(input)).Get(p.getURL(path))
 	case "post":
-		response, err = p.client.R().SetQueryParams(p.structToStringMap(input)).Post(p.getURL(path))
+		response, err = p.client.R().SetFormData(p.structToStringMap(input)).Post(p.getURL(path))
 	case "put":
 		response, err = p.client.R().SetQueryParams(p.structToStringMap(input)).Put(p.getURL(path))
 	case "delete":
