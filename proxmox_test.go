@@ -1,6 +1,8 @@
 package dockermachinedriverproxmoxve_test
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"testing"
 

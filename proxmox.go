@@ -7,6 +7,7 @@ package dockermachinedriverproxmoxve
 import (
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -102,6 +103,10 @@ func GetProxmoxVEConnection(data *ProxmoxVE) (*ProxmoxVE, error) {
 	data.Version = ver.Version
 
 	return data, nil
+}
+
+func (p ProxmoxVE) EnableDebugging() {
+	p.client.SetDebug(true)
 }
 
 func (p ProxmoxVE) getURL(str string) string {

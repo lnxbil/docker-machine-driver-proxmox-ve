@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 
+	"gopkg.in/resty.v1"
+
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/mcnflag"
 	"github.com/docker/machine/libmachine/state"
@@ -33,6 +35,8 @@ type Driver struct {
 	Memory      int    // memory in GB
 
 	VMID string // VM ID only filled by create()
+
+	restyDebug bool // enable resty debugging
 }
 
 func (d *Driver) connectAPI() error {
@@ -42,9 +46,11 @@ func (d *Driver) connectAPI() error {
 		log.Warnf("Connecting to %s as %s@%s with password '%s'\n", d.Host, d.User, d.Realm, d.Password)
 		c, err := GetProxmoxVEConnectionByValues(d.User, d.Password, d.Realm, d.Host)
 		d.driver = c
-
 		if err != nil {
-			return err
+			return fmt.Errorf("Could not connect to host '%s' with '%s@%s'", d.Host, d.User, d.Realm)
+		}
+		if d.restyDebug {
+			c.EnableDebugging()
 		}
 		log.Warn("Connected to version '" + d.driver.Version + "'")
 	}
@@ -119,6 +125,10 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Usage:  "storage type to use (QCOW2 or RAW)",
 			Value:  "qcow2",
 		},
+		mcnflag.BoolFlag{
+			Name:  "proxmox-resty-debug",
+			Usage: "enables the resty debugging",
+		},
 	}
 }
 
@@ -163,6 +173,12 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
+
+	d.restyDebug = flags.Bool("proxmox-resty-debug")
+	if d.restyDebug {
+		log.Info("enabling Resty debugging")
+		resty.SetDebug(true)
+	}
 
 	return nil
 }
