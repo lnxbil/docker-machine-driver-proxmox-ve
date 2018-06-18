@@ -1,10 +1,22 @@
 package dockermachinedriverproxmoxve
 
 import (
+	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path"
 	"strings"
+	"time"
 
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/resty.v1"
+
+	sshrw "github.com/mosolovsa/go_cat_sshfilerw"
 
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/mcnflag"
@@ -34,7 +46,8 @@ type Driver struct {
 	Memory          int    // memory in GB
 	StorageFilename string
 
-	VMID string // VM ID only filled by create()
+	VMID          string // VM ID only filled by create()
+	GuestPassword string // password to log into the guest OS to copy the public key
 
 	driverDebug bool // driver debugging
 	restyDebug  bool // enable resty debugging
@@ -138,6 +151,11 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Usage:  "storage type to use (QCOW2 or RAW)",
 			Value:  "raw",
 		},
+		mcnflag.StringFlag{
+			Name:  "proxmox-guest-password",
+			Usage: "Password to log in to the guest OS (default tcuser for boot2docker)",
+			Value: "tcuser",
+		},
 		mcnflag.BoolFlag{
 			Name:  "proxmox-resty-debug",
 			Usage: "enables the resty debugging",
@@ -190,6 +208,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
+	d.GuestPassword = flags.String("proxmox-guest-password")
 
 	d.driverDebug = flags.Bool("proxmox-driver-debug")
 	d.restyDebug = flags.Bool("proxmox-resty-debug")
@@ -301,7 +320,17 @@ func (d *Driver) PreCreateCheck() error {
 	}
 	d.StorageFilename = filename
 
-	return nil
+	// create and save a new SSH key pair
+	keyfile := d.GetSSHKeyPath()
+	keypath := path.Dir(keyfile)
+	d.debugf("Generating new key pair at path '%s'", keypath)
+	err = os.MkdirAll(keypath, 0755)
+	if err != nil {
+		return err
+	}
+	_, _, err = GetKeyPair(keyfile)
+
+	return err
 }
 
 func (d *Driver) Create() error {
@@ -343,8 +372,69 @@ func (d *Driver) Create() error {
 	}
 
 	d.Start()
+	return d.waitAndPrepareSSH()
+}
+func (d *Driver) waitAndPrepareSSH() error {
+	d.debugf("waiting for VM to become active, first wait 10 seconds")
+	time.Sleep(10 * time.Second)
 
-	return nil
+	for !d.ping() {
+		d.debugf("waiting for VM to become active")
+		time.Sleep(2 * time.Second)
+	}
+	d.debugf("VM is active waiting more")
+	time.Sleep(2 * time.Second)
+
+	sshConfig := &ssh.ClientConfig{
+		User: d.GetSSHUsername(),
+		Auth: []ssh.AuthMethod{
+			ssh.Password(d.GuestPassword)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
+	sshbasedir := "/home/" + d.GetSSHUsername() + "/.ssh"
+	hostname, _ := d.GetSSHHostname()
+	port, _ := d.GetSSHPort()
+	clientstr := fmt.Sprintf("%s:%d", hostname, port)
+
+	d.debugf("Creating directory '%s'", sshbasedir)
+	conn, err := ssh.Dial("tcp", clientstr, sshConfig)
+	if err != nil {
+		return err
+	}
+	session, err := conn.NewSession()
+	if err != nil {
+		return err
+	}
+
+	var stdoutBuf bytes.Buffer
+	session.Stdout = &stdoutBuf
+	session.Run("mkdir -p " + sshbasedir)
+	d.debugf(fmt.Sprintf("%s -> %s", hostname, stdoutBuf.String()))
+	session.Close()
+
+	d.debugf("Trying to copy to %s:%s", clientstr, sshbasedir)
+	c, err := sshrw.NewSSHclt(clientstr, sshConfig)
+	if err != nil {
+		return err
+	}
+
+	// Open a file
+	f, err := os.Open(d.GetSSHKeyPath() + ".pub")
+	if err != nil {
+		return err
+	}
+
+	// TODO: always fails with return status 127, but file was copied correclty
+	c.WriteFile(f, sshbasedir+"/authorized_keys")
+	// if err = c.WriteFile(f, sshbasedir+"/authorized_keys"); err != nil {
+	// 	d.debugf("Error on file write: ", err)
+	// }
+
+	// Close the file after it has been copied
+	defer f.Close()
+
+	return err
 }
 
 func (d *Driver) Start() error {
@@ -392,4 +482,58 @@ func NewDriver(hostName, storePath string) drivers.Driver {
 			StorePath:   storePath,
 		},
 	}
+}
+
+func GetKeyPair(file string) (string, string, error) {
+	// read keys from file
+	_, err := os.Stat(file)
+	if err == nil {
+		priv, err := ioutil.ReadFile(file)
+		if err != nil {
+			fmt.Printf("Failed to read file - %s", err)
+			goto genKeys
+		}
+		pub, err := ioutil.ReadFile(file + ".pub")
+		if err != nil {
+			fmt.Printf("Failed to read pub file - %s", err)
+			goto genKeys
+		}
+		return string(pub), string(priv), nil
+	}
+
+	// generate keys and save to file
+genKeys:
+	pub, priv, err := GenKeyPair()
+	err = ioutil.WriteFile(file, []byte(priv), 0600)
+	if err != nil {
+		return "", "", fmt.Errorf("Failed to write file - %s", err)
+	}
+	err = ioutil.WriteFile(file+".pub", []byte(pub), 0644)
+	if err != nil {
+		return "", "", fmt.Errorf("Failed to write pub file - %s", err)
+	}
+
+	return pub, priv, nil
+}
+
+func GenKeyPair() (string, string, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return "", "", err
+	}
+
+	privateKeyPEM := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
+	var private bytes.Buffer
+	if err := pem.Encode(&private, privateKeyPEM); err != nil {
+		return "", "", err
+	}
+
+	// generate public key
+	pub, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		return "", "", err
+	}
+
+	public := ssh.MarshalAuthorizedKey(pub)
+	return string(public), private.String(), nil
 }
