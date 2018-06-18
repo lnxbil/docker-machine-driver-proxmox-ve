@@ -246,6 +246,11 @@ func (d *Driver) GetSSHUsername() string {
 }
 
 func (d *Driver) GetState() (state.State, error) {
+	err := d.connectAPI()
+	if err != nil {
+		return state.Paused, err
+	}
+
 	if d.ping() {
 		return state.Running, nil
 	}
