@@ -5,6 +5,7 @@ The incomplete state is over, as I have a working configuration:
 * [Download](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/releases/tag/v1) or build your own driver
 * Copy to some location that is in your path
 * Check if it works:
+
         $ docker-machine create --driver proxmox-ve --help | grep -c proxmox
         14
 
