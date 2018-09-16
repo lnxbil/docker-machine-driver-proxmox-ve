@@ -9,7 +9,7 @@ The incomplete state is over, as I have a working configuration:
         $ docker-machine create --driver proxmox-ve --help | grep -c proxmox
         14
 
-* Create your own `boot2docker` ISO to have the guest agent integrated [boot2docker Pull 1319](https://github.com/boot2docker/boot2docker/pull/1319)
+* Create your own `boot2docker` ISO to have the guest agent integrated [boot2docker Pull 1319](https://github.com/boot2docker/boot2docker/pull/1319) ([Direct Download in my fork](https://github.com/lnxbil/boot2docker/releases/tag/2018-09-16))
 * Create a script with the following contents and adapt to your needs:
 
 ```sh
