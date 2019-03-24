@@ -308,6 +308,7 @@ type NodesNodeQemuPostParameter struct {
 	KVM       string // optional, Enable/disable KVM hardware virtualization.
 	Pool      string // optional, Add the VM to the specified pool.
 	Cores     string // optional, The number of cores per socket.
+	Sockets   string // optional, The number of CPU sockets.
 	Cdrom     string // optional, This is an alias for option -ide2
 }
 

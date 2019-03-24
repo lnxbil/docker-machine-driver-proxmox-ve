@@ -24,6 +24,8 @@ import (
 	"github.com/labstack/gommon/log"
 )
 
+const NO_VLAN = "No VLAN"
+
 // Driver for Proxmox VE
 type Driver struct {
 	*drivers.BaseDriver
@@ -51,6 +53,12 @@ type Driver struct {
 
 	driverDebug bool // driver debugging
 	restyDebug  bool // enable resty debugging
+
+	NetBridge  string  // Net was defaulted to vmbr0, but should accept any other config i.e vmbr1
+	NetModel   string  // Net Interface Model, [e1000, virtio, realtek, etc...]
+	NetVlanTag int     // VLAN Tag -1 means NO Vlan
+	Cores      string  // # of cores on each cpu socket
+	Sockets    string  // # of cpu sockets
 }
 
 func (d *Driver) debugf(format string, v ...interface{}) {
@@ -164,6 +172,36 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:  "proxmox-driver-debug",
 			Usage: "enables debugging in the driver",
 		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOX_NET_BRIDGE",
+			Name: "proxmox-net-bridge",
+			Usage: "Assign Network Bridge, default to vmbr0",
+			Value: "vmbr0",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOX_NET_MODEL",
+			Name: "proxmox-net-model",
+			Usage: "Net Interface model, default virtio",
+			Value: "virtio",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOX_NET_VLANTAG",
+			Name: "proxmox-net-vlantag",
+			Usage: "Net VLAN Tag",
+			Value: -1,
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOX_CPU_CORES",
+			Name: "proxmox-cpu-cores",
+			Usage: "# of CPU Cores on each CPU Socket",
+			Value: "4",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOX_CPU_SOCKETS",
+			Name: "proxmox-cpu-Sockets",
+			Usage: "# of CPU Sockets",
+			Value: "1",
+		},
 	}
 }
 
@@ -217,6 +255,11 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 		resty.SetDebug(true)
 	}
 
+	d.NetBridge  = flags.String("proxmox-net-bridge")
+	d.NetModel   = flags.String("proxmox-net-model")
+	d.NetVlanTag = flags.Int("proxmox-net-vlantag")
+	d.Sockets    = flags.Int("proxmox-cpu-sockets")
+	d.Cores      = flags.Int("proxmox-cpu-cores")
 	return nil
 }
 
@@ -305,7 +348,7 @@ func (d *Driver) PreCreateCheck() error {
 		return err
 	}
 
-	filename := "vm-" + d.VMID + "-disk-1"
+	filename := "vm-" + d.VMID + "-disk-0"
 	switch storageType {
 	case "lvmthin":
 		fallthrough
@@ -347,13 +390,19 @@ func (d *Driver) Create() error {
 		return err
 	}
 
+	net := fmt.Sprintf("model=%s,bridge=%s", d.NetModel, d.NetBridge)
+	if  d.NetVlanTag > 0 {
+		net = fmt.Sprintf("%s,tag=%d", net, d.NetVlanTag)
+	}
+
 	npp := NodesNodeQemuPostParameter{
 		VMID:      d.VMID,
 		Agent:     "1",
 		Autostart: "1",
 		Memory:    d.Memory,
-		Cores:     "4",
-		Net0:      "virtio,bridge=vmbr0",
+		Cores:     d.Cores,
+		Sockets:   d.Sockets,
+		Net0:      net, // Added to support bridge differnet from vmbr0 (vlan tag should be supported as well)
 		SCSI0:     d.Storage + ":" + volume.Filename,
 		Ostype:    "l26",
 		Name:      d.BaseDriver.MachineName,
