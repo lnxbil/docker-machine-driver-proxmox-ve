@@ -25,6 +25,14 @@ PVE_STORAGE_TYPE="RAW"
 PVE_IMAGE_FILE="isos:iso/boot2docker-PR1319.iso"
 VM_NAME="boot2docker"
 
+
+PVE_NET_BRIDGE="vmbr0"
+PVE_NET_MODEL="virtio"
+PVE_NET_VLANTAG="1"
+PVE_CPU_CORES="4"
+PVE_CPU_SOCKETS="1"
+
+
 docker-machine rm --force $VM_NAME >/dev/null 2>&1 || true
 
 docker-machine --debug \
@@ -40,6 +48,11 @@ docker-machine --debug \
     --proxmox-storage $PVE_STORAGE \
     --proxmox-pool $PVE_POOL \
     --proxmox-storage-type $PVE_STORAGE_TYPE \
+    --proxmox-net-bridge $PVE_NET_BRIDGE \
+    --proxmox-net-model $PVE_NET_MODEL \
+    --proxmox-net-vlantag $PVE_NET_VLANTAG \
+    --proxmox-cpu-cores $PVE_CPU_CORES \
+    --proxmox-cpu-sockets $PVE_CPU_SOCKETS \
     $* \
     $VM_NAME 
 

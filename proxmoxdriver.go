@@ -198,7 +198,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOX_CPU_SOCKETS",
-			Name: "proxmox-cpu-Sockets",
+			Name: "proxmox-cpu-sockets",
 			Usage: "# of CPU Sockets",
 			Value: "1",
 		},
