@@ -3,3 +3,4 @@ cmd/docker-machine-driver-proxmox-ve/docker-machine-driver-proxmox-ve
 
 # MacOS stuff
 .DS_Store
+.idea

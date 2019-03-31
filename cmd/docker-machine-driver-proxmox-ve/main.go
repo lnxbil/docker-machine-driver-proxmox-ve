@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/docker/machine/libmachine/drivers/plugin"
-	proxmox "github.com/lnxbil/docker-machine-driver-proxmox-ve"
+	proxmox "github.com/mhermosi/docker-machine-driver-proxmox-ve"
 )
 
 func main() {
