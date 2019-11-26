@@ -371,7 +371,10 @@ func (d *Driver) Create() error {
 		return err
 	}
 
-	d.Start()
+	err = d.Start()
+	if err != nil {
+		return err
+	}
 	return d.waitAndPrepareSSH()
 }
 func (d *Driver) waitAndPrepareSSH() error {
