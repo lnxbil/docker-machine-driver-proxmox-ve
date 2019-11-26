@@ -85,6 +85,7 @@ func (d *Driver) connectAPI() error {
 	return nil
 }
 
+// GetCreateFlags returns the argument flags for the program
 func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 	return []mcnflag.Flag{
 		mcnflag.StringFlag{
@@ -200,6 +201,7 @@ func (d *Driver) DriverName() string {
 	return "proxmox-ve"
 }
 
+// SetConfigFromFlags configures all command line arguments
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.debug("SetConfigFromFlags called")
 	d.ImageFile = flags.String("proxmox-image-file")
@@ -234,6 +236,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	return nil
 }
 
+// GetURL returns the URL for the target docker daemon
 func (d *Driver) GetURL() (string, error) {
 	ip, err := d.GetIP()
 	if err != nil {
@@ -245,31 +248,33 @@ func (d *Driver) GetURL() (string, error) {
 	return fmt.Sprintf("tcp://%s:2376", ip), nil
 }
 
+// GetMachineName returns the machine name
 func (d *Driver) GetMachineName() string {
 	return d.MachineName
 }
 
+// GetIP returns the ip
 func (d *Driver) GetIP() (string, error) {
 	d.connectAPI()
 	return d.driver.GetEth0IPv4(d.Node, d.VMID)
 }
 
+// GetSSHHostname returns the ssh host returned by the API
 func (d *Driver) GetSSHHostname() (string, error) {
 	return d.GetIP()
 }
 
-//func (d *Driver) GetSSHKeyPath() string {
-//	return d.GetSSHKeyPath() + ".pub"
-//}
-
+// GetSSHPort returns the ssh port, 22 if not specified
 func (d *Driver) GetSSHPort() (int, error) {
 	return d.GuestSSHPort, nil
 }
 
+// GetSSHUsername returns the ssh user name, root if not specified
 func (d *Driver) GetSSHUsername() string {
 	return d.GuestUsername
 }
 
+// GetState returns the state of the VM
 func (d *Driver) GetState() (state.State, error) {
 	err := d.connectAPI()
 	if err != nil {
@@ -282,6 +287,7 @@ func (d *Driver) GetState() (state.State, error) {
 	return state.Paused, nil
 }
 
+// PreCreateCheck is called to enforce pre-creation steps
 func (d *Driver) PreCreateCheck() error {
 
 	switch d.StorageType {
@@ -339,6 +345,7 @@ func (d *Driver) PreCreateCheck() error {
 	return err
 }
 
+// Create creates a new VM with storage
 func (d *Driver) Create() error {
 
 	volume := NodesNodeStorageStorageContentPostParameter{
@@ -452,6 +459,7 @@ func (d *Driver) waitAndPrepareSSH() error {
 	return err
 }
 
+// Start starts the VM
 func (d *Driver) Start() error {
 	err := d.connectAPI()
 	if err != nil {
@@ -460,23 +468,24 @@ func (d *Driver) Start() error {
 	return d.driver.NodesNodeQemuVMIDStatusStartPost(d.Node, d.VMID)
 }
 
+// Stop stopps the VM
 func (d *Driver) Stop() error {
-	//d.MockState = state.Stopped
 	return nil
 }
 
+// Restart restarts the VM
 func (d *Driver) Restart() error {
 	d.Stop()
 	d.Start()
-	//d.MockState = state.Running
 	return nil
 }
 
+// Kill is currently a NOOP
 func (d *Driver) Kill() error {
-	//d.MockState = state.Stopped
 	return nil
 }
 
+// Remove removes the VM
 func (d *Driver) Remove() error {
 	err := d.connectAPI()
 	if err != nil {
@@ -485,10 +494,12 @@ func (d *Driver) Remove() error {
 	return d.driver.NodesNodeQemuVMIDDelete(d.Node, d.VMID)
 }
 
+// Upgrade is currently a NOOP
 func (d *Driver) Upgrade() error {
 	return nil
 }
 
+// NewDriver returns a new driver
 func NewDriver(hostName, storePath string) drivers.Driver {
 	return &Driver{
 		BaseDriver: &drivers.BaseDriver{
@@ -499,6 +510,7 @@ func NewDriver(hostName, storePath string) drivers.Driver {
 	}
 }
 
+// GetKeyPair returns a public/private key pair and an optional error
 func GetKeyPair(file string) (string, string, error) {
 	// read keys from file
 	_, err := os.Stat(file)
@@ -531,6 +543,7 @@ genKeys:
 	return pub, priv, nil
 }
 
+// GenKeyPair returns a freshly created public/private key pair and an optional error
 func GenKeyPair() (string, string, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
