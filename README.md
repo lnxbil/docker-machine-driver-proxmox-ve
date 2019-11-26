@@ -10,7 +10,7 @@ The incomplete state is over, as I have a working configuration:
         14
 
 * Use a recent, e.g. `1.5.4` version of [RancherOS](https://github.com/rancher/os/releases) and use the
-  `rancheros-proxmoxve-autoformat.iso` file.
+  `rancheros-proxmoxve.iso` file.
 * Create a script with the following contents and adapt to your needs:
 
 ```sh
@@ -23,7 +23,7 @@ PVE_PASSWD="D0ck3rS3cr3t"
 PVE_POOL="docker-machine"
 PVE_STORAGE="zfs"
 PVE_STORAGE_TYPE="RAW"
-PVE_IMAGE_FILE="isos:docker-machine-iso/rancheros-proxmoxve-autoformat.iso"
+PVE_IMAGE_FILE="isos:docker-machine-iso/rancheros-proxmoxve.iso"
 VM_NAME="proxmox-rancher"
 
 docker-machine rm --force $VM_NAME >/dev/null 2>&1 || true
