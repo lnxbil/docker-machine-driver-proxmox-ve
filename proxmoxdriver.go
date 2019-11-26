@@ -139,7 +139,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOX_IMAGE_FILE",
 			Name:   "proxmox-image-file",
-			Usage:  "storage of the image file (e.g. local:iso/rancheros.iso)",
+			Usage:  "storage of the image file (e.g. local:iso/rancheros-proxmoxve-autoformat.iso)",
 			Value:  "",
 		},
 		mcnflag.StringFlag{
@@ -156,12 +156,12 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 		},
 		mcnflag.StringFlag{
 			Name:  "proxmox-guest-username",
-			Usage: "Username to log in to the guest OS (default docker for boot2docker)",
+			Usage: "Username to log in to the guest OS (default docker for rancheros)",
 			Value: "docker",
 		},
 		mcnflag.StringFlag{
 			Name:  "proxmox-guest-password",
-			Usage: "Password to log in to the guest OS (default tcuser for boot2docker)",
+			Usage: "Password to log in to the guest OS (default tcuser for rancheros)",
 			Value: "tcuser",
 		},
 		mcnflag.IntFlag{

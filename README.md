@@ -2,28 +2,29 @@
 
 The incomplete state is over, as I have a working configuration:
 
-* [Download](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/releases/tag/v1) or build your own driver
+* [Download](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/releases/tag/v2) or build your own driver
 * Copy to some location that is in your path
 * Check if it works:
 
         $ docker-machine create --driver proxmox-ve --help | grep -c proxmox
         14
 
-* Create your own `boot2docker` ISO to have the guest agent integrated [boot2docker Pull 1319](https://github.com/boot2docker/boot2docker/pull/1319) ([Direct Download in my fork](https://github.com/lnxbil/boot2docker/releases/tag/2018-09-16))
+* Use a recent, e.g. `1.5.4` version of [RancherOS](https://github.com/rancher/os/releases) and use the
+  `rancheros-proxmoxve-autoformat.iso` file.
 * Create a script with the following contents and adapt to your needs:
 
 ```sh
-PVE_NODE="proxmox4"
-PVE_HOST="proxmox4.local"
+PVE_NODE="proxmox"
+PVE_HOST="proxmox"
 PVE_USER="docker"
-PVE_MEMORY=1
+PVE_MEMORY=2
 PVE_REALM="pve"
-PVE_PASSWD="docker1234"
+PVE_PASSWD="D0ck3rS3cr3t"
 PVE_POOL="docker-machine"
 PVE_STORAGE="zfs"
 PVE_STORAGE_TYPE="RAW"
-PVE_IMAGE_FILE="isos:iso/boot2docker-PR1319.iso"
-VM_NAME="boot2docker"
+PVE_IMAGE_FILE="isos:docker-machine-iso/rancheros-proxmoxve-autoformat.iso"
+VM_NAME="proxmox-rancher"
 
 docker-machine rm --force $VM_NAME >/dev/null 2>&1 || true
 
@@ -43,7 +44,7 @@ docker-machine --debug \
     $* \
     $VM_NAME 
 
-eval $(docker-machine env boot2docker)
+eval $(docker-machine env $VM_NAME)
 
 docker ps
 ```
