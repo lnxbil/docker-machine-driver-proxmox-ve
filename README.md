@@ -47,3 +47,34 @@ eval $(docker-machine env boot2docker)
 
 docker ps
 ```
+
+## Preparing a special test user in PVE
+
+If you want to test this docker-machine driver, i strongly recommend to secure it properly.
+Best way to do this to create a special user that has its own pool and storage for creating
+the test machines.
+
+Here is what I use (based on ZFS):
+
+* create a pool for use as `--proxmox-pool docker-machine`
+
+        pvesh create /pools -poolid docker-machine
+
+* create an user `docker-machine` with password `D0ck3rS3cr3t`
+
+        pvesh create /access/users -userid docker-machine@pve -password D0ck3rS3cr3t
+
+* creating a special ZFS dataset and use it as PVE storage
+
+        zfs create -o refquota=50G rpool/proxmox/docker-machine
+        zfs create zpool/proxmox/docker-machine/iso
+        pvesh create /storage -storage docker-machine -type zfspool -pool rpool/proxmox/docker-machine
+        pvesh create /storage -storage docker-machine-iso -type dir -path /zpool/proxmox/docker-machine/iso -content iso
+        pvesh set /pools/docker-machine -storage docker-machine
+        pvesh set /pools/docker-machine -storage docker-machine-iso
+
+* set proper permissions for the user
+
+        pvesh set /access/acl -path /pool/docker-machine -roles PVEVMAdmin,PVEDatastoreAdmin,PVEPoolAdmin -users docker-machine@pve
+
+
