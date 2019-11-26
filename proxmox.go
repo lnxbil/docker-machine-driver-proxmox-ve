@@ -588,22 +588,18 @@ func (p ProxmoxVE) WaitForTaskToComplete(node string, taskid string) {
 
 	tsr := TaskStatusReturn{}
 
-	timeout := 100
-	t := 0
-	for t < timeout {
+	for true {
+		log.Infof("Waiting for task %s to finish", taskid)
 		p.get(nil, &tsr, path)
 		if len(tsr.Data) == 0 {
-			log.Warnf("Empty result for taskid %s", taskid)
+			log.Info("Empty result, so it's finished or wrong taskid")
 			return
 		}
 		if tsr.Data[0].Status != "running" {
-			log.Warnf("Status is %s, exiting", tsr.Data[0].Status)
+			log.Infof("Status is %s, exiting", tsr.Data[0].Status)
 			return
 		}
-		log.Warn("Waiting a big")
+		log.Info("still running, waiting 500ms")
 		time.Sleep(500 * time.Millisecond)
-		t++
 	}
-
-	log.Warnf("We ran in a timeout")
 }
