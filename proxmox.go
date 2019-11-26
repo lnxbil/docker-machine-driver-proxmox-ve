@@ -276,10 +276,10 @@ type NodesNodeStorageStorageContentPostParameter struct {
 
 // NodesNodeStorageStorageContentPost access the API
 // Allocate disk images.
-func (p ProxmoxVE) NodesNodeStorageStorageContentPost(node string, storage string, input *NodesNodeStorageStorageContentPostParameter) error {
+func (p ProxmoxVE) NodesNodeStorageStorageContentPost(node string, storage string, input *NodesNodeStorageStorageContentPostParameter) (diskname string, err error) {
 	path := fmt.Sprintf("/nodes/%s/storage/%s/content", node, storage)
-	err := p.post(input, nil, path)
-	return err
+	err = p.post(input, &diskname, path)
+	return diskname, err
 }
 
 // ClusterNextIDGet Get next free VMID. If you pass an VMID it will raise an error if the ID is already used.

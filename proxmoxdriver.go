@@ -342,9 +342,15 @@ func (d *Driver) Create() error {
 	}
 
 	d.debugf("Creating disk volume '%s' with size '%s'", volume.Filename, volume.Size)
-	err := d.driver.NodesNodeStorageStorageContentPost(d.Node, d.Storage, &volume)
+	diskname, err := d.driver.NodesNodeStorageStorageContentPost(d.Node, d.Storage, &volume)
 	if err != nil {
 		return err
+	}
+
+	storagefilename := d.Storage + ":" + volume.Filename
+
+	if diskname != storagefilename {
+		return fmt.Errorf("returned diskname is not correct:\n should be '%s' but was '%s'", storagefilename, diskname)
 	}
 
 	npp := NodesNodeQemuPostParameter{
@@ -354,7 +360,7 @@ func (d *Driver) Create() error {
 		Memory:    d.Memory,
 		Cores:     "4",
 		Net0:      "virtio,bridge=vmbr0",
-		SCSI0:     d.Storage + ":" + volume.Filename,
+		SCSI0:     storagefilename,
 		Ostype:    "l26",
 		Name:      d.BaseDriver.MachineName,
 		KVM:       "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization
