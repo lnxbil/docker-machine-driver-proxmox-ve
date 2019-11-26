@@ -57,7 +57,7 @@ type Driver struct {
 
 func (d *Driver) debugf(format string, v ...interface{}) {
 	if d.driverDebug {
-		log.Infof(fmt.Sprintf(format, v...))
+		log.Infof(format, v...)
 	}
 }
 
