@@ -228,8 +228,10 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 
 	d.driverDebug = flags.Bool("proxmox-driver-debug")
 	d.restyDebug = flags.Bool("proxmox-resty-debug")
+
 	if d.restyDebug {
 		d.debug("enabling Resty debugging")
+		resty.SetLogger(log.Output())
 		resty.SetDebug(true)
 	}
 
