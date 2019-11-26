@@ -499,7 +499,11 @@ func (d *Driver) Remove() error {
 	if err != nil {
 		return err
 	}
-	return d.driver.NodesNodeQemuVMIDDelete(d.Node, d.VMID)
+	taskid, err := d.driver.NodesNodeQemuVMIDDelete(d.Node, d.VMID)
+
+	d.driver.WaitForTaskToComplete(d.Node, taskid)
+
+	return err
 }
 
 // Upgrade is currently a NOOP

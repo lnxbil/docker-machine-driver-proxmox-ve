@@ -412,13 +412,13 @@ func (p ProxmoxVE) NodesNodeQemuVMIDAgentPost(node string, vmid string, input *N
 
 // NodesNodeQemuVMIDDelete access the API
 // Destroy the vm (also delete all used/owned volumes).
-func (p ProxmoxVE) NodesNodeQemuVMIDDelete(node string, vmid string) error {
+func (p ProxmoxVE) NodesNodeQemuVMIDDelete(node string, vmid string) (taskid string, err error) {
 	p.NodesNodeQemuVMIDStatusStopPost(node, vmid)
 	time.Sleep(time.Second)
 
 	path := fmt.Sprintf("/nodes/%s/qemu/%s", node, vmid)
-	err := p.delete(nil, nil, path)
-	return err
+	err = p.delete(nil, &taskid, path)
+	return taskid, err
 }
 
 // NodesNodeQemuVMIDStatusStopPost access the API
