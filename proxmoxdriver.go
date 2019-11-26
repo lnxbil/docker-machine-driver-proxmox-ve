@@ -47,7 +47,9 @@ type Driver struct {
 	StorageFilename string
 
 	VMID          string // VM ID only filled by create()
+	GuestUsername string // user to log into the guest OS to copy the public key
 	GuestPassword string // password to log into the guest OS to copy the public key
+	GuestSSHPort  int    // ssh port to log into the guest OS to copy the public key
 
 	driverDebug bool // driver debugging
 	restyDebug  bool // enable resty debugging
@@ -152,9 +154,19 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  "raw",
 		},
 		mcnflag.StringFlag{
+			Name:  "proxmox-guest-username",
+			Usage: "Username to log in to the guest OS (default docker for boot2docker)",
+			Value: "docker",
+		},
+		mcnflag.StringFlag{
 			Name:  "proxmox-guest-password",
 			Usage: "Password to log in to the guest OS (default tcuser for boot2docker)",
 			Value: "tcuser",
+		},
+		mcnflag.IntFlag{
+			Name:  "proxmox-guest-ssh-port",
+			Usage: "SSH port in the guest to log in to (defaults to 22)",
+			Value: 22,
 		},
 		mcnflag.BoolFlag{
 			Name:  "proxmox-resty-debug",
@@ -208,6 +220,8 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
+	d.GuestSSHPort = flags.Int("proxmox-guest-ssh-port")
+	d.GuestUsername = flags.String("proxmox-guest-username")
 	d.GuestPassword = flags.String("proxmox-guest-password")
 
 	d.driverDebug = flags.Bool("proxmox-driver-debug")
@@ -249,19 +263,11 @@ func (d *Driver) GetSSHHostname() (string, error) {
 //}
 
 func (d *Driver) GetSSHPort() (int, error) {
-	if d.SSHPort == 0 {
-		d.SSHPort = 22
-	}
-
-	return d.SSHPort, nil
+	return d.GuestSSHPort, nil
 }
 
 func (d *Driver) GetSSHUsername() string {
-	if d.SSHUser == "" {
-		d.SSHUser = "docker"
-	}
-
-	return d.SSHUser
+	return d.GuestUsername
 }
 
 func (d *Driver) GetState() (state.State, error) {
