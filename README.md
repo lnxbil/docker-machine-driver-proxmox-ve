@@ -97,3 +97,10 @@ Here is what I use (based on ZFS):
 
 * exclusive RancherOS support due to their special Proxmox VE iso files
 * adding wait cycles for asynchronous background tasks, e.g.  `create`, `stop` etc.
+* use one logger engine
+* add guest username, password and ssh-port as new command line arguments
+* more and potentially better error handling
+
+### Version 1
+
+* Initial Version
