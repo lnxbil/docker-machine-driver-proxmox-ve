@@ -106,6 +106,7 @@ func GetProxmoxVEConnection(data *ProxmoxVE) (*ProxmoxVE, error) {
 }
 
 func (p ProxmoxVE) EnableDebugging() {
+	p.client.SetLogger(log.Output())
 	p.client.SetDebug(true)
 }
 
