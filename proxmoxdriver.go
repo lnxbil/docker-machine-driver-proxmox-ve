@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
-	"gopkg.in/resty.v1"
+	resty "gopkg.in/resty.v1"
 
 	sshrw "github.com/mosolovsa/go_cat_sshfilerw"
 
@@ -385,10 +385,12 @@ func (d *Driver) Create() error {
 		npp.SCSI0 = d.Storage + ":" + d.VMID + "/" + volume.Filename
 	}
 	d.debugf("Creating VM '%s' with '%d' of memory", npp.VMID, npp.Memory)
-	err = d.driver.NodesNodeQemuPost(d.Node, &npp)
+	taskid, err := d.driver.NodesNodeQemuPost(d.Node, &npp)
 	if err != nil {
 		return err
 	}
+
+	d.driver.WaitForTaskToComplete(d.Node, taskid)
 
 	err = d.Start()
 	if err != nil {
@@ -465,7 +467,11 @@ func (d *Driver) Start() error {
 	if err != nil {
 		return err
 	}
-	return d.driver.NodesNodeQemuVMIDStatusStartPost(d.Node, d.VMID)
+	taskid, err := d.driver.NodesNodeQemuVMIDStatusStartPost(d.Node, d.VMID)
+
+	d.driver.WaitForTaskToComplete(d.Node, taskid)
+
+	return err
 }
 
 // Stop stopps the VM

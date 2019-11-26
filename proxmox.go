@@ -381,18 +381,18 @@ type nNodesNodeQemuPostParameter struct {
 
 // NodesNodeQemuPost access the API
 // Create or restore a virtual machine.
-func (p ProxmoxVE) NodesNodeQemuPost(node string, input *NodesNodeQemuPostParameter) error {
+func (p ProxmoxVE) NodesNodeQemuPost(node string, input *NodesNodeQemuPostParameter) (taskid string, err error) {
 	path := fmt.Sprintf("/nodes/%s/qemu", node)
-	err := p.post(input, nil, path)
-	return err
+	err = p.post(input, &taskid, path)
+	return taskid, err
 }
 
 // NodesNodeQemuVMIDStatusStartPost access the API
 // Start virtual machine.
-func (p ProxmoxVE) NodesNodeQemuVMIDStatusStartPost(node string, vmid string) error {
+func (p ProxmoxVE) NodesNodeQemuVMIDStatusStartPost(node string, vmid string) (taskid string, err error) {
 	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/start", node, vmid)
-	err := p.post(nil, nil, path)
-	return err
+	err = p.post(nil, &taskid, path)
+	return taskid, err
 }
 
 // NodesNodeQemuVMIDAgentPostParameter represents the input data for /nodes/{node}/qemu/{vmid}/agent
@@ -564,5 +564,46 @@ func (p ProxmoxVE) GetStorageType(node string, storagename string) (string, erro
 			return storage.Type, nil
 		}
 	}
-	return "", errors.New(fmt.Sprintf("storage '%s' not found", storagename))
+	return "", fmt.Errorf("storage '%s' not found", storagename)
+}
+
+// TaskStatusReturn represents a status return message from the API
+type TaskStatusReturn struct {
+	Data []struct {
+		UPID      string `json:"upid"`
+		Node      string `json:"node"`
+		User      string `json:"user"`
+		PID       int    `json:"pid"`
+		ID        string `json:"id"`
+		StartTime int    `json:"starttime"`
+		Type      string `json:"type"`
+		PStart    int    `json:"pstart"`
+		Status    string `json:"status"`
+	}
+}
+
+// WaitForTaskToComplete waits until the given task in taskid is finished (exited or otherwise)
+func (p ProxmoxVE) WaitForTaskToComplete(node string, taskid string) {
+	path := fmt.Sprintf("/nodes/%s/tasks/%s/status", node, taskid)
+
+	tsr := TaskStatusReturn{}
+
+	timeout := 100
+	t := 0
+	for t < timeout {
+		p.get(nil, &tsr, path)
+		if len(tsr.Data) == 0 {
+			log.Warnf("Empty result for taskid %s", taskid)
+			return
+		}
+		if tsr.Data[0].Status != "running" {
+			log.Warnf("Status is %s, exiting", tsr.Data[0].Status)
+			return
+		}
+		log.Warn("Waiting a big")
+		time.Sleep(500 * time.Millisecond)
+		t++
+	}
+
+	log.Warnf("We ran in a timeout")
 }
