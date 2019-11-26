@@ -7,7 +7,6 @@ package dockermachinedriverproxmoxve
 import (
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -69,7 +68,6 @@ func GetProxmoxVEConnection(data *ProxmoxVE) (*ProxmoxVE, error) {
 
 	data.client = resty.New()
 
-	//data.client.SetDebug(true)
 	data.client.SetTLSClientConfig(&tls.Config{InsecureSkipVerify: true})
 	//data.client.SetTimeout(time.Duration(3 * time.Second))
 
@@ -105,6 +103,7 @@ func GetProxmoxVEConnection(data *ProxmoxVE) (*ProxmoxVE, error) {
 	return data, nil
 }
 
+// EnableDebugging enables Resty debugging of requests
 func (p ProxmoxVE) EnableDebugging() {
 	p.client.SetLogger(log.Output())
 	p.client.SetDebug(true)
@@ -193,6 +192,7 @@ func (p ProxmoxVE) runMethod(method string, input interface{}, output interface{
 		return err
 	}
 	code := response.StatusCode()
+
 	if code < 200 || code > 300 {
 		return fmt.Errorf("status code was '%d' and error is\n%s", code, response.Status())
 	}
@@ -442,6 +442,7 @@ func unmarshallString(data string, value string) (string, error) {
 	return string(zz), err
 }
 
+// IPReturn represents the result from the qemu-guest-agent call network-get-interfaces
 type IPReturn struct {
 	Data struct {
 		Result []struct {
@@ -504,8 +505,6 @@ func (p ProxmoxVE) NodesNodeQemuVMIDStatusCurrentGet(node string, vmid string) (
 		return state.Paused, err
 	}
 
-	log.Warnf("Status is '%s'", f["status"])
-
 	switch f["status"] {
 	case "running":
 		return state.Running, nil
@@ -516,8 +515,10 @@ func (p ProxmoxVE) NodesNodeQemuVMIDStatusCurrentGet(node string, vmid string) (
 	return state.Error, nil
 }
 
+// IntBool represents a bool value as seen by the PERL API
 type IntBool bool
 
+// UnmarshalJSON for Integer-based boolean values returned from the API
 func (bit IntBool) UnmarshalJSON(data []byte) error {
 	asString := string(data)
 	if asString == "1" || asString == "true" {
@@ -525,11 +526,12 @@ func (bit IntBool) UnmarshalJSON(data []byte) error {
 	} else if asString == "0" || asString == "false" {
 		bit = false
 	} else {
-		return errors.New(fmt.Sprintf("Boolean unmarshal error: invalid input %s", asString))
+		return fmt.Errorf("Boolean unmarshal error: invalid input %s", asString)
 	}
 	return nil
 }
 
+// StorageReturn represents the storage response from the API
 type StorageReturn struct {
 	Data []struct {
 		Active  int     `json:"active"`
@@ -544,7 +546,7 @@ type StorageReturn struct {
 	} `json:"data"`
 }
 
-// GetEth0IPv4 access the API
+// GetStorageType returns the storage type as string
 func (p ProxmoxVE) GetStorageType(node string, storagename string) (string, error) {
 	path := fmt.Sprintf("/nodes/%s/storage", node)
 
