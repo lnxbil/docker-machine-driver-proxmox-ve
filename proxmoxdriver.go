@@ -392,12 +392,16 @@ func (d *Driver) Create() error {
 		return err
 	}
 
-	d.driver.WaitForTaskToComplete(d.Node, taskid)
+	err = d.driver.WaitForTaskToComplete(d.Node, taskid)
+	if err != nil {
+		return err
+	}
 
 	err = d.Start()
 	if err != nil {
 		return err
 	}
+
 	return d.waitAndPrepareSSH()
 }
 func (d *Driver) waitAndPrepareSSH() error {
@@ -471,7 +475,11 @@ func (d *Driver) Start() error {
 	}
 	taskid, err := d.driver.NodesNodeQemuVMIDStatusStartPost(d.Node, d.VMID)
 
-	d.driver.WaitForTaskToComplete(d.Node, taskid)
+	if err != nil {
+		return err
+	}
+
+	err = d.driver.WaitForTaskToComplete(d.Node, taskid)
 
 	return err
 }
@@ -501,8 +509,11 @@ func (d *Driver) Remove() error {
 	}
 	taskid, err := d.driver.NodesNodeQemuVMIDDelete(d.Node, d.VMID)
 
-	d.driver.WaitForTaskToComplete(d.Node, taskid)
+	if err != nil {
+		return err
+	}
 
+	err = d.driver.WaitForTaskToComplete(d.Node, taskid)
 	return err
 }
 

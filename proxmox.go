@@ -569,37 +569,42 @@ func (p ProxmoxVE) GetStorageType(node string, storagename string) (string, erro
 
 // TaskStatusReturn represents a status return message from the API
 type TaskStatusReturn struct {
-	Data []struct {
-		UPID      string `json:"upid"`
-		Node      string `json:"node"`
-		User      string `json:"user"`
-		PID       int    `json:"pid"`
-		ID        string `json:"id"`
-		StartTime int    `json:"starttime"`
-		Type      string `json:"type"`
-		PStart    int    `json:"pstart"`
-		Status    string `json:"status"`
-	}
+	UPID       string `json:"upid"`
+	Node       string `json:"node"`
+	User       string `json:"user"`
+	PID        int    `json:"pid"`
+	ID         string `json:"id"`
+	StartTime  int    `json:"starttime"`
+	Exitstatus string `json:"exitstatus"`
+	Type       string `json:"type"`
+	PStart     int    `json:"pstart"`
+	Status     string `json:"status"`
 }
 
 // WaitForTaskToComplete waits until the given task in taskid is finished (exited or otherwise)
-func (p ProxmoxVE) WaitForTaskToComplete(node string, taskid string) {
+func (p ProxmoxVE) WaitForTaskToComplete(node string, taskid string) error {
 	path := fmt.Sprintf("/nodes/%s/tasks/%s/status", node, taskid)
 
 	tsr := TaskStatusReturn{}
 
 	for true {
 		log.Infof("Waiting for task %s to finish", taskid)
-		p.get(nil, &tsr, path)
-		if len(tsr.Data) == 0 {
-			log.Info("Empty result, so it's finished or wrong taskid")
-			return
+		err := p.get(nil, &tsr, path)
+		if err != nil {
+			log.Infof("Got on read: %s", err.Error())
+			return err
 		}
-		if tsr.Data[0].Status != "running" {
-			log.Infof("Status is %s, exiting", tsr.Data[0].Status)
-			return
+		log.Infof("Status is %s", tsr.Status)
+		if tsr.Status != "running" {
+			if tsr.Exitstatus != "OK" {
+				return fmt.Errorf("%s -> %s: %s", tsr.Type, tsr.Status, tsr.Exitstatus)
+			}
+			log.Infof("exiting with %s", tsr.Exitstatus)
+			return nil
 		}
 		log.Info("still running, waiting 500ms")
 		time.Sleep(500 * time.Millisecond)
 	}
+	// unreachable code
+	return nil
 }
