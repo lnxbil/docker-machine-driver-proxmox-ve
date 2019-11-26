@@ -1,16 +1,15 @@
-# Docker Machine Driver - BETA
+# Docker Machine Driver for Proxmox VE - BETA
 
 The incomplete state is over, as I have a working configuration:
 
-* [Download](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/releases/tag/v2) or build your own driver
-* Copy to some location that is in your path
+* [Download](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/releases/tag/v2) and copy it into your `PATH` (don't forget to `chmod +x`) or build your own driver
 * Check if it works:
 
         $ docker-machine create --driver proxmox-ve --help | grep -c proxmox
-        14
+        16
 
-* Use a recent, e.g. `1.5.4` version of [RancherOS](https://github.com/rancher/os/releases) and use the
-  `rancheros-proxmoxve.iso` file.
+* Use a recent, e.g. `1.5.4` version of [RancherOS](https://github.com/rancher/os/releases) and copy the
+  `rancheros-proxmoxve.iso` to your iso image storage on your PVE
 * Create a script with the following contents and adapt to your needs:
 
 ```sh
@@ -26,6 +25,9 @@ PVE_STORAGE_TYPE="RAW"
 PVE_IMAGE_FILE="isos:docker-machine-iso/rancheros-proxmoxve.iso"
 VM_NAME="proxmox-rancher"
 
+GUEST_USERNAME="docker"
+GUEST_PASSWORD="tcuser"
+
 docker-machine rm --force $VM_NAME >/dev/null 2>&1 || true
 
 docker-machine --debug \
@@ -34,13 +36,20 @@ docker-machine --debug \
     --proxmox-host $PVE_HOST \
     --proxmox-user $PVE_USER \
     --proxmox-realm $PVE_REALM \
-    --proxmox-password $PVE_PASSWD 
+    --proxmox-password $PVE_PASSWD  \
     --proxmox-node $PVE_NODE \
     --proxmox-memory-gb $PVE_MEMORY \
     --proxmox-image-file "$PVE_IMAGE_FILE" \
     --proxmox-storage $PVE_STORAGE \
     --proxmox-pool $PVE_POOL \
     --proxmox-storage-type $PVE_STORAGE_TYPE \
+    \
+    --proxmox-guest-username $GUEST_USERNAME \
+    --proxmox-guest-password $GUEST_PASSWORD \
+    \
+    --proxmox-resty-debug \
+    --proxmox-driver-debug \
+    \
     $* \
     $VM_NAME 
 
@@ -48,6 +57,8 @@ eval $(docker-machine env $VM_NAME)
 
 docker ps
 ```
+
+And start it up. At the first run, it is adiveable to not comment out the `debug` flags. If everything works as expected, you can remove them.
 
 ## Preparing a special test user in PVE
 
@@ -79,3 +90,10 @@ Here is what I use (based on ZFS):
         pvesh set /access/acl -path /pool/docker-machine -roles PVEVMAdmin,PVEDatastoreAdmin,PVEPoolAdmin -users docker-machine@pve
 
 
+
+## Changes
+
+### Version 2
+
+* exclusive RancherOS support due to their special Proxmox VE iso files
+* adding wait cycles for asynchronous background tasks, e.g.  `create`, `stop` etc.
