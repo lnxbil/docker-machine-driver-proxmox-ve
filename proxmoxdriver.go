@@ -198,7 +198,7 @@ func (d *Driver) ping() bool {
 
 // DriverName returns the name of the driver
 func (d *Driver) DriverName() string {
-	return "proxmox-ve"
+	return "proxmoxve"
 }
 
 // SetConfigFromFlags configures all command line arguments
