@@ -93,6 +93,11 @@ Here is what I use (based on ZFS):
 
 ## Changes
 
+### Version 3 (WIP)
+
+* Renaming driver from `proxmox-ve` to `proxmoxve` due to identification problem with RancherOS's K8S implementation (Thanks to [`@Sellto` for reporting #16](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/issues/16))
+* fixing issue with created disk detection (Thanks to [`@Sellto` for reporting #16](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/issues/16))
+
 ### Version 2
 
 * exclusive RancherOS support due to their special Proxmox VE iso files
