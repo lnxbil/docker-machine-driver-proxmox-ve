@@ -399,9 +399,10 @@ func (d *Driver) Create() error {
 	if err != nil {
 		return err
 	}
-
+	d.IPAddress = d.GetIP()
 	return d.waitAndPrepareSSH()
 }
+
 func (d *Driver) waitAndPrepareSSH() error {
 	d.debugf("waiting for VM to become active, first wait 10 seconds")
 	time.Sleep(10 * time.Second)
