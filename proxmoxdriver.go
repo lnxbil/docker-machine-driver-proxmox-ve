@@ -89,31 +89,31 @@ func (d *Driver) connectAPI() error {
 func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 	return []mcnflag.Flag{
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOX_HOST",
+			EnvVar: "PROXMOXVE_HOST",
 			Name:   "proxmoxve-host",
 			Usage:  "Host to connect to",
 			Value:  "192.168.1.253",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOX_DISKSIZE_GB",
+			EnvVar: "PROXMOXVE_DISKSIZE_GB",
 			Name:   "proxmoxve-disksize-gb",
 			Usage:  "disk size in GB",
 			Value:  "16",
 		},
 		mcnflag.IntFlag{
-			EnvVar: "PROXMOX_MEMORY_GB",
+			EnvVar: "PROXMOXVE_MEMORY_GB",
 			Name:   "proxmoxve-memory-gb",
 			Usage:  "memory in GB",
 			Value:  8,
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOX_STORAGE",
+			EnvVar: "PROXMOXVE_STORAGE",
 			Name:   "proxmoxve-storage",
 			Usage:  "storage to create the VM volume on",
 			Value:  "local",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOX_NODE",
+			EnvVar: "PROXMOXVE_NODE",
 			Name:   "proxmoxve-node",
 			Usage:  "to to use (defaults to host)",
 			Value:  "",
@@ -125,7 +125,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  "root",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOX_REALM",
+			EnvVar: "PROXMOXVE_REALM",
 			Name:   "proxmoxve-realm",
 			Usage:  "Realm to connect to (default: pam)",
 			Value:  "pam",
@@ -137,19 +137,19 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  "",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOX_IMAGE_FILE",
+			EnvVar: "PROXMOXVE_IMAGE_FILE",
 			Name:   "proxmoxve-image-file",
 			Usage:  "storage of the image file (e.g. local:iso/rancheros-proxmoxve-autoformat.iso)",
 			Value:  "",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOX_POOL",
+			EnvVar: "PROXMOXVE_POOL",
 			Name:   "proxmoxve-pool",
 			Usage:  "pool to attach to",
 			Value:  "",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOX_STORAGE_TYPE",
+			EnvVar: "PROXMOXVE_STORAGE_TYPE",
 			Name:   "proxmoxve-storage-type",
 			Usage:  "storage type to use (QCOW2 or RAW)",
 			Value:  "raw",
