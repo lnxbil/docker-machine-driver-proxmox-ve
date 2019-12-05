@@ -198,36 +198,36 @@ func (d *Driver) ping() bool {
 
 // DriverName returns the name of the driver
 func (d *Driver) DriverName() string {
-	return "proxmox-ve"
+	return "proxmoxve"
 }
 
 // SetConfigFromFlags configures all command line arguments
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.debug("SetConfigFromFlags called")
-	d.ImageFile = flags.String("proxmox-image-file")
-	d.Host = flags.String("proxmox-host")
-	d.Node = flags.String("proxmox-node")
+	d.ImageFile = flags.String("proxmoxve-image-file")
+	d.Host = flags.String("proxmoxve-host")
+	d.Node = flags.String("proxmoxve-node")
 	if len(d.Node) == 0 {
 		d.Node = d.Host
 	}
-	d.User = flags.String("proxmox-user")
-	d.Realm = flags.String("proxmox-realm")
-	d.Pool = flags.String("proxmox-pool")
-	d.Password = flags.String("proxmox-password")
-	d.DiskSize = flags.String("proxmox-disksize-gb")
-	d.Storage = flags.String("proxmox-storage")
-	d.StorageType = strings.ToLower(flags.String("proxmox-storage-type"))
-	d.Memory = flags.Int("proxmox-memory-gb")
+	d.User = flags.String("proxmoxve-user")
+	d.Realm = flags.String("proxmoxve-realm")
+	d.Pool = flags.String("proxmoxve-pool")
+	d.Password = flags.String("proxmoxve-password")
+	d.DiskSize = flags.String("proxmoxve-disksize-gb")
+	d.Storage = flags.String("proxmoxve-storage")
+	d.StorageType = strings.ToLower(flags.String("proxmoxve-storage-type"))
+	d.Memory = flags.Int("proxmoxve-memory-gb")
 	d.Memory *= 1024
 
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
-	d.GuestSSHPort = flags.Int("proxmox-guest-ssh-port")
-	d.GuestUsername = flags.String("proxmox-guest-username")
-	d.GuestPassword = flags.String("proxmox-guest-password")
+	d.GuestSSHPort = flags.Int("proxmoxve-guest-ssh-port")
+	d.GuestUsername = flags.String("proxmoxve-guest-username")
+	d.GuestPassword = flags.String("proxmoxve-guest-password")
 
-	d.driverDebug = flags.Bool("proxmox-driver-debug")
-	d.restyDebug = flags.Bool("proxmox-resty-debug")
+	d.driverDebug = flags.Bool("proxmoxve-driver-debug")
+	d.restyDebug = flags.Bool("proxmoxve-resty-debug")
 
 	if d.restyDebug {
 		d.debug("enabling Resty debugging")
