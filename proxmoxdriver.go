@@ -399,7 +399,13 @@ func (d *Driver) Create() error {
 	if err != nil {
 		return err
 	}
-	d.IPAddress = d.GetIP()
+	ip, err := d.GetIP()
+	if err != nil {
+		return err
+	} else {
+		d.IPAddress = ip
+	}
+
 	return d.waitAndPrepareSSH()
 }
 
