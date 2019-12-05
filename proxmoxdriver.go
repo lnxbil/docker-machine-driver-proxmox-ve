@@ -362,7 +362,7 @@ func (d *Driver) Create() error {
 		return err
 	}
 
-	if diskname != d.StorageFilename {
+	if !strings.HasSuffix(diskname, d.StorageFilename) {
 		return fmt.Errorf("returned diskname is not correct: should be '%s' but was '%s'", d.StorageFilename, diskname)
 	}
 
