@@ -395,16 +395,18 @@ func (d *Driver) Create() error {
 		return err
 	}
 
-	err = d.Start()
-	if err != nil {
-		return err
-	}
 	ip, err := d.GetIP()
 	if err != nil {
 		return err
 	} else {
 		d.IPAddress = ip
 	}
+	
+	err = d.Start()
+	if err != nil {
+		return err
+	}
+
 
 	return d.waitAndPrepareSSH()
 }
