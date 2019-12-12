@@ -398,10 +398,11 @@ func (d *Driver) Create() error {
 	ip, err := d.GetIP()
 	if err != nil {
 		return err
-	} else {
-		d.IPAddress = ip
+
 	}
-	
+	log.Info(d.GetIP())
+	d.IPAddress = ip
+	log.Info(d.IPAddress)
 	err = d.Start()
 	if err != nil {
 		return err
