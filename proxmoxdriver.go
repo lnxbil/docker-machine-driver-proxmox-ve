@@ -371,7 +371,7 @@ func (d *Driver) Create() error {
 		Agent:     "1",
 		Autostart: "1",
 		Memory:    d.Memory,
-		Cores:     "4",
+		Cores:     "2",
 		Net0:      "virtio,bridge=vmbr0",
 		SCSI0:     d.StorageFilename,
 		Ostype:    "l26",
@@ -400,9 +400,8 @@ func (d *Driver) Create() error {
 		return err
 
 	}
-	log.Infof(string(d.GetIP()))
 	d.IPAddress = ip
-	log.Infof(string(d.IPAddress))
+	d.debugf("driver IP is set as '%s'", d.IPAddress)
 	err = d.Start()
 	if err != nil {
 		return err
