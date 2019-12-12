@@ -394,14 +394,6 @@ func (d *Driver) Create() error {
 	if err != nil {
 		return err
 	}
-
-	ip, err := d.GetIP()
-	if err != nil {
-		return err
-
-	}
-	d.IPAddress = ip
-	d.debugf("driver IP is set as '%s'", d.IPAddress)
 	err = d.Start()
 	if err != nil {
 		return err
@@ -443,7 +435,13 @@ func (d *Driver) waitAndPrepareSSH() error {
 	if err != nil {
 		return err
 	}
+	ip, err := d.GetIP()
+	if err != nil {
+		return err
 
+	}
+	d.IPAddress = ip
+	d.debugf("driver IP is set as '%s'", d.IPAddress)
 	var stdoutBuf bytes.Buffer
 	session.Stdout = &stdoutBuf
 	session.Run("mkdir -p " + sshbasedir)
