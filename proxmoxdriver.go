@@ -400,9 +400,9 @@ func (d *Driver) Create() error {
 		return err
 
 	}
-	log.Info(d.GetIP())
+	log.Infof(string(d.GetIP()))
 	d.IPAddress = ip
-	log.Info(d.IPAddress)
+	log.Infof(string(d.IPAddress))
 	err = d.Start()
 	if err != nil {
 		return err
