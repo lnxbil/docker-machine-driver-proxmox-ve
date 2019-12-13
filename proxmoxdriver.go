@@ -50,7 +50,7 @@ type Driver struct {
 	GuestUsername string // user to log into the guest OS to copy the public key
 	GuestPassword string // password to log into the guest OS to copy the public key
 	GuestSSHPort  int    // ssh port to log into the guest OS to copy the public key
-
+	Cores       string
 	driverDebug bool // driver debugging
 	restyDebug  bool // enable resty debugging
 }
@@ -148,11 +148,11 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Usage:  "memory in GB",
 			Value:  8,
 		},
-		mcnflag.IntFlag{
+		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_CPU",
 			Name:   "proxmoxve-vm-cpu",
 			Usage:  "number of cpu cores",
-			Value:  2,
+			Value:  "2",
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_IMAGE_FILE",
@@ -228,7 +228,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.Memory = flags.Int("proxmoxve-vm-memory")
 	d.Memory *= 1024
 	d.ImageFile = flags.String("proxmoxve-vm-image-file")
-	d.CPU = flags.String("proxmoxve-vm-CPU")
+	d.Cores = flags.String("proxmoxve-vm-CPU")
 	//SSH connection settings
 	d.GuestSSHPort = flags.Int("proxmoxve-ssh-port")
 	d.GuestUsername = flags.String("proxmoxve-ssh-username")
@@ -384,7 +384,7 @@ func (d *Driver) Create() error {
 		Agent:     "1",
 		Autostart: "1",
 		Memory:    d.Memory,
-		Cores:     d.CPU,
+		Cores:     d.Cores,
 		Net0:      "virtio,bridge=vmbr0",
 		SCSI0:     d.StorageFilename,
 		Ostype:    "l26",
