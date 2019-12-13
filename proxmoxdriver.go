@@ -223,7 +223,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 
 	// VM configuration
 	d.DiskSize = flags.String("proxmoxve-vm-storage-size")
-	d.Storage = flags.String("proxmoxve-vm-storage-type")
+	d.Storage = flags.String("proxmoxve-vm-storage-path")
 	d.StorageType = strings.ToLower(flags.String("proxmoxve-vm-storage-type"))
 	d.Memory = flags.Int("proxmoxve-vm-memory")
 	d.Memory *= 1024
