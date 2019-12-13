@@ -150,7 +150,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_CPU",
-			Name:   "proxmoxve-vm-cpu",
+			Name:   "proxmoxve-vm-cpu-cores",
 			Usage:  "number of cpu cores",
 			Value:  "2",
 		},
@@ -228,7 +228,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.Memory = flags.Int("proxmoxve-vm-memory")
 	d.Memory *= 1024
 	d.ImageFile = flags.String("proxmoxve-vm-image-file")
-	d.Cores = flags.String("proxmoxve-vm-CPU")
+	d.Cores = flags.String("proxmoxve-vm-cpu-cores")
 	//SSH connection settings
 	d.GuestSSHPort = flags.Int("proxmoxve-ssh-port")
 	d.GuestUsername = flags.String("proxmoxve-ssh-username")
