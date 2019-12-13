@@ -102,7 +102,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_PROXMOX_USER_NAME",
-			Name:   "proxmoxve-proxmox_user-name",
+			Name:   "proxmoxve-proxmox-user-name",
 			Usage:  "User to connect as",
 			Value:  "root",
 		},
