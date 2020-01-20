@@ -46,6 +46,9 @@ type Driver struct {
 	Memory          int    // memory in GB
 	StorageFilename string
 
+	NetBridge		string // bridge applied to network interface
+	NetVlanTag		int    // vlan tag
+
 	VMID          string // VM ID only filled by create()
 	GuestUsername string // user to log into the guest OS to copy the public key
 	GuestPassword string // password to log into the guest OS to copy the public key
@@ -149,6 +152,18 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  "",
 		},
 		mcnflag.StringFlag{
+			EnvVar: "PROXMOX_NET_BRIDGE",
+			Name:   "proxmox-net-bridge",
+			Usage:  "bridge to attach network",
+			Value:  "vmbr0",
+		},
+		mcnflag.IntFlag{
+			EnvVar: "PROXMOX_NET_TAG",
+			Name:   "proxmox-net-tag",
+			Usage:  "vlan tag",
+			Value:  0,
+		},
+		mcnflag.StringFlag{
 			EnvVar: "PROXMOX_STORAGE_TYPE",
 			Name:   "proxmox-storage-type",
 			Usage:  "storage type to use (QCOW2 or RAW)",
@@ -220,6 +235,9 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.Memory = flags.Int("proxmox-memory-gb")
 	d.Memory *= 1024
 
+	d.NetBridge = flags.String("proxmox-net-bridge")
+	d.NetVlanTag = flags.Int("proxmox-net-tag")
+
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
 	d.GuestSSHPort = flags.Int("proxmox-guest-ssh-port")
@@ -253,6 +271,16 @@ func (d *Driver) GetURL() (string, error) {
 // GetMachineName returns the machine name
 func (d *Driver) GetMachineName() string {
 	return d.MachineName
+}
+
+// GetBridge returns the bridge
+func (d *Driver) GetNetBridge() string {
+	return d.NetBridge
+}
+
+// GetBridge returns the lvan 
+func (d *Driver) GetNetVlanTag() int {
+	return d.NetVlanTag
 }
 
 // GetIP returns the ip
@@ -362,8 +390,10 @@ func (d *Driver) Create() error {
 		return err
 	}
 
-	if !strings.HasSuffix(diskname, d.StorageFilename) {
-		return fmt.Errorf("returned diskname is not correct: should be '%s' but was '%s'", d.StorageFilename, diskname)
+	storagefilename := d.Storage + ":" + volume.Filename
+
+	if diskname != storagefilename {
+		return fmt.Errorf("returned diskname is not correct:\n should be '%s' but was '%s'", storagefilename, diskname)
 	}
 
 	npp := NodesNodeQemuPostParameter{
@@ -373,12 +403,16 @@ func (d *Driver) Create() error {
 		Memory:    d.Memory,
 		Cores:     "4",
 		Net0:      "virtio,bridge=vmbr0",
-		SCSI0:     d.StorageFilename,
+		SCSI0:     storagefilename,
 		Ostype:    "l26",
 		Name:      d.BaseDriver.MachineName,
 		KVM:       "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization
 		Cdrom:     d.ImageFile,
 		Pool:      d.Pool,
+	}
+
+	if d.NetVlanTag != 0 {
+		npp.Net0 = fmt.Sprintf("virtio,bridge=%s,tag=%d", d.NetBridge, d.NetVlanTag) 
 	}
 
 	if d.StorageType == "qcow2" {
