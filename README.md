@@ -22,6 +22,8 @@ PVE_PASSWD="D0ck3rS3cr3t"
 PVE_POOL="docker-machine"
 PVE_STORAGE="zfs"
 PVE_STORAGE_TYPE="RAW"
+PVE_NET_BRIDGE="vmbr0"
+PVE_NET_TAG="200"
 PVE_IMAGE_FILE="isos:docker-machine-iso/rancheros-proxmoxve.iso"
 VM_NAME="proxmox-rancher"
 
@@ -43,6 +45,9 @@ docker-machine --debug \
     --proxmox-storage $PVE_STORAGE \
     --proxmox-pool $PVE_POOL \
     --proxmox-storage-type $PVE_STORAGE_TYPE \
+    \
+    --proxmox-net-bridge $PVE_NET_BRIDGE \ 
+    --proxmox-net-tag $PVE_NET_TAG \
     \
     --proxmox-guest-username $GUEST_USERNAME \
     --proxmox-guest-password $GUEST_PASSWORD \
