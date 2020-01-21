@@ -78,10 +78,10 @@ Here is what I use (based on ZFS):
 
 * creating a special ZFS dataset and use it as PVE storage
 
-        zfs create -o refquota=50G rpool/proxmox/docker-machine
-        zfs create zpool/proxmox/docker-machine/iso
-        pvesh create /storage -storage docker-machine -type zfspool -pool rpool/proxmox/docker-machine
-        pvesh create /storage -storage docker-machine-iso -type dir -path /zpool/proxmox/docker-machine/iso -content iso
+        zfs create -o refquota=50G rpool/docker-machine-test
+        zfs create rpool/docker-machine-test/iso
+        pvesh create /storage -storage docker-machine -type zfspool -pool rpool/docker-machine-test
+        pvesh create /storage -storage docker-machine-iso -type dir -path /rpool/docker-machine-test/iso -content iso
         pvesh set /pools/docker-machine -storage docker-machine
         pvesh set /pools/docker-machine -storage docker-machine-iso
 
@@ -89,6 +89,11 @@ Here is what I use (based on ZFS):
 
         pvesh set /access/acl -path /pool/docker-machine -roles PVEVMAdmin,PVEDatastoreAdmin,PVEPoolAdmin -users docker-machine@pve
 
+If you have additional test storages, you can also add them easily:
+
+        pvesh set /pools/docker-machine -storage nfs
+        pvesh set /pools/docker-machine -storage lvm
+        pvesh set /pools/docker-machine -storage directory
 
 
 ## Changes
