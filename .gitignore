@@ -1,5 +1,5 @@
 # docker machine driver
-cmd/docker-machine-driver-proxmox-ve/docker-machine-driver-proxmox-ve
+cmd/docker-machine-driver-proxmoxve/docker-machine-driver-proxmox*
 
 # MacOS stuff
 .DS_Store
