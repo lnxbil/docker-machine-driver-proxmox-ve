@@ -23,6 +23,8 @@ PVE_POOL="docker-machine"
 PVE_STORAGE="zfs"
 PVE_STORAGE_TYPE="RAW"
 PVE_IMAGE_FILE="isos:docker-machine-iso/rancheros-proxmoxve-autoformat.iso"
+PVE_NET_BRIDGE="vmbr0"
+PVE_NET_VLAN_TAG="200"
 VM_NAME="proxmox-rancher"
 
 GUEST_USERNAME="docker"
@@ -43,6 +45,9 @@ docker-machine --debug \
     --proxmoxve-vm-image-file "$PVE_IMAGE_FILE" \
     --proxmoxve-vm-storage-type $PVE_STORAGE \
     --proxmox-storage-type $PVE_STORAGE_TYPE \
+    \
+    --proxmoxve-vm-net-bridge $PVE_NET_BRIDGE \
+    --proxmoxve-vm-net-tag $PVE_NET_VLAN_TAG \
     \
     --proxmox-ssh-username $GUEST_USERNAME \
     --proxmox-ssh-password $GUEST_PASSWORD \

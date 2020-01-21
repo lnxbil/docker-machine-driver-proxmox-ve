@@ -46,6 +46,9 @@ type Driver struct {
 	Memory          int    // memory in GB
 	StorageFilename string
 
+	NetBridge  string // bridge applied to network interface
+	NetVlanTag int    // vlan tag
+
 	VMID          string // VM ID only filled by create()
 	GuestUsername string // user to log into the guest OS to copy the public key
 	GuestPassword string // password to log into the guest OS to copy the public key
@@ -135,6 +138,18 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:   "proxmoxve-vm-storage-size",
 			Usage:  "disk size in GB",
 			Value:  "16",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_NET_BRIDGE",
+			Name:   "proxmoxve-vm-net-bridge",
+			Usage:  "bridge to attach network to",
+			Value:  "vmbr0",
+		},
+		mcnflag.IntFlag{
+			EnvVar: "PROXMOXVE_VM_NET_TAG",
+			Name:   "proxmoxve-vm-net-tag",
+			Usage:  "vlan tag",
+			Value:  0,
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_VM_STORAGE_TYPE",
@@ -229,6 +244,9 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.Memory *= 1024
 	d.ImageFile = flags.String("proxmoxve-vm-image-file")
 	d.Cores = flags.String("proxmoxve-vm-cpu-cores")
+	d.NetBridge = flags.String("proxmoxve-vm-net-bridge")
+	d.NetVlanTag = flags.Int("proxmoxve-vm-net-tag")
+
 	//SSH connection settings
 	d.GuestSSHPort = flags.Int("proxmoxve-ssh-port")
 	d.GuestUsername = flags.String("proxmoxve-ssh-username")
@@ -266,6 +284,16 @@ func (d *Driver) GetURL() (string, error) {
 // GetMachineName returns the machine name
 func (d *Driver) GetMachineName() string {
 	return d.MachineName
+}
+
+// GetNetBridge returns the bridge
+func (d *Driver) GetNetBridge() string {
+	return d.NetBridge
+}
+
+// GetNetVlanTag returns the vlan tag
+func (d *Driver) GetNetVlanTag() int {
+	return d.NetVlanTag
 }
 
 // GetIP returns the ip
@@ -394,6 +422,10 @@ func (d *Driver) Create() error {
 		Pool:      d.Pool,
 	}
 
+	if d.NetVlanTag != 0 {
+		npp.Net0 = fmt.Sprintf("virtio,bridge=%s,tag=%d", d.NetBridge, d.NetVlanTag)
+	}
+
 	if d.StorageType == "qcow2" {
 		npp.SCSI0 = d.Storage + ":" + d.VMID + "/" + volume.Filename
 	}
@@ -411,7 +443,6 @@ func (d *Driver) Create() error {
 	if err != nil {
 		return err
 	}
-
 
 	return d.waitAndPrepareSSH()
 }
