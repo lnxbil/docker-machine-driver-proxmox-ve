@@ -9,7 +9,7 @@ The incomplete state is over, as I have a working configuration:
         16
 
 * Use a recent, e.g. `1.5.4` version of [RancherOS](https://github.com/rancher/os/releases) and copy the
-  `rancheros-proxmoxve.iso` to your iso image storage on your PVE
+  `rancheros-proxmoxve-autoformat.iso` to your iso image storage on your PVE
 * Create a script with the following contents and adapt to your needs:
 
 ```sh
@@ -22,7 +22,7 @@ PVE_PASSWD="D0ck3rS3cr3t"
 PVE_POOL="docker-machine"
 PVE_STORAGE="zfs"
 PVE_STORAGE_TYPE="RAW"
-PVE_IMAGE_FILE="isos:docker-machine-iso/rancheros-proxmoxve.iso"
+PVE_IMAGE_FILE="isos:docker-machine-iso/rancheros-proxmoxve-autoformat.iso"
 VM_NAME="proxmox-rancher"
 
 GUEST_USERNAME="docker"
@@ -32,26 +32,26 @@ docker-machine rm --force $VM_NAME >/dev/null 2>&1 || true
 
 docker-machine --debug \
     create \
-    --driver proxmox-ve \
-    --proxmox-host $PVE_HOST \
-    --proxmox-user $PVE_USER \
-    --proxmox-realm $PVE_REALM \
-    --proxmox-password $PVE_PASSWD  \
-    --proxmox-node $PVE_NODE \
-    --proxmox-memory-gb $PVE_MEMORY \
-    --proxmox-image-file "$PVE_IMAGE_FILE" \
-    --proxmox-storage $PVE_STORAGE \
-    --proxmox-pool $PVE_POOL \
+    --driver proxmoxve \
+    --proxmoxve-proxmox-host $PVE_HOST \
+    --proxmoxve-proxmox-user $PVE_USER \
+    --proxmoxve-proxmox-realm $PVE_REALM \
+    --proxmoxve-proxmox-user-password $PVE_PASSWD  \
+    --proxmoxve-proxmox-node $PVE_NODE \
+    --proxmoxve-proxmox-pool $PVE_POOL \
+    --proxmoxve-vm-memory $PVE_MEMORY \
+    --proxmoxve-vm-image-file "$PVE_IMAGE_FILE" \
+    --proxmoxve-vm-storage-type $PVE_STORAGE \
     --proxmox-storage-type $PVE_STORAGE_TYPE \
     \
-    --proxmox-guest-username $GUEST_USERNAME \
-    --proxmox-guest-password $GUEST_PASSWORD \
+    --proxmox-ssh-username $GUEST_USERNAME \
+    --proxmox-ssh-password $GUEST_PASSWORD \
     \
     --proxmox-resty-debug \
     --proxmox-driver-debug \
     \
     $* \
-    $VM_NAME 
+    $VM_NAME
 
 eval $(docker-machine env $VM_NAME)
 
@@ -102,6 +102,9 @@ If you have additional test storages, you can also add them easily:
 
 * Renaming driver from `proxmox-ve` to `proxmoxve` due to identification problem with RancherOS's K8S implementation (Thanks to [`@Sellto` for reporting #16](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/issues/16))
 * fixing issue with created disk detection (Thanks to [`@Sellto` for reporting #16](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/issues/16))
+* Add `IPAddress` property needed by rancher to know the ip address of the created VM.
+* Change the name of each flag for better display in the rancher `Node Templates`
+* Add number of `CPU cores configuration paramater`.
 
 ### Version 2
 
