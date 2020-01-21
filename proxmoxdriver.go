@@ -140,18 +140,6 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  "16",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_NET_BRIDGE",
-			Name:   "proxmoxve-vm-net-bridge",
-			Usage:  "bridge to attach network to",
-			Value:  "vmbr0",
-		},
-		mcnflag.IntFlag{
-			EnvVar: "PROXMOXVE_VM_NET_TAG",
-			Name:   "proxmoxve-vm-net-tag",
-			Usage:  "vlan tag",
-			Value:  0,
-		},
-		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_VM_STORAGE_TYPE",
 			Name:   "proxmoxve-vm-storage-type",
 			Usage:  "storage type to use (QCOW2 or RAW)",
@@ -174,6 +162,18 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:   "proxmoxve-vm-image-file",
 			Usage:  "storage of the image file (e.g. local:iso/rancheros-proxmoxve-autoformat.iso)",
 			Value:  "",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_NET_BRIDGE",
+			Name:   "proxmoxve-vm-net-bridge",
+			Usage:  "bridge to attach network to",
+			Value:  "vmbr0",
+		},
+		mcnflag.IntFlag{
+			EnvVar: "PROXMOXVE_VM_NET_TAG",
+			Name:   "proxmoxve-vm-net-tag",
+			Usage:  "vlan tag",
+			Value:  0,
 		},
 		mcnflag.StringFlag{
 			Name:  "proxmoxve-ssh-username",
