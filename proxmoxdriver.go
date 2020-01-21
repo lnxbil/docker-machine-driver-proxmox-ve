@@ -146,19 +146,19 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  "raw",
 		},
 		mcnflag.IntFlag{
-			EnvVar: "PROXMOXVE_MEMORY",
+			EnvVar: "PROXMOXVE_VM_MEMORY",
 			Name:   "proxmoxve-vm-memory",
 			Usage:  "memory in GB",
 			Value:  8,
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_CPU",
+			EnvVar: "PROXMOXVE_VM_CPU",
 			Name:   "proxmoxve-vm-cpu-cores",
 			Usage:  "number of cpu cores",
 			Value:  "2",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_IMAGE_FILE",
+			EnvVar: "PROXMOXVE_VM_IMAGE_FILE",
 			Name:   "proxmoxve-vm-image-file",
 			Usage:  "storage of the image file (e.g. local:iso/rancheros-proxmoxve-autoformat.iso)",
 			Value:  "",
