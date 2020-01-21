@@ -433,6 +433,8 @@ func (d *Driver) Create() error {
 
 	if d.StorageType == "qcow2" {
 		npp.SCSI0 = d.Storage + ":" + d.VMID + "/" + volume.Filename
+	} else if d.StorageType == "raw" {
+		npp.SCSI0 = d.Storage + ":" + volume.Filename
 	}
 	d.debugf("Creating VM '%s' with '%d' of memory", npp.VMID, npp.Memory)
 	taskid, err := d.driver.NodesNodeQemuPost(d.Node, &npp)

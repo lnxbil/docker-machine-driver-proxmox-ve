@@ -3,3 +3,7 @@ cmd/docker-machine-driver-proxmoxve/docker-machine-driver-proxmox*
 
 # MacOS stuff
 .DS_Store
+
+# Visual Studio Code stuff
+.history
+*.code-workspace
