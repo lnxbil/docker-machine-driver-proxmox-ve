@@ -436,7 +436,12 @@ func (d *Driver) Create() error {
 	if d.StorageType == "qcow2" {
 		npp.SCSI0 = d.Storage + ":" + d.VMID + "/" + volume.Filename
 	} else if d.StorageType == "raw" {
-		npp.SCSI0 = d.Storage + ":" + volume.Filename
+		if strings.HasSuffix(volume.Filename, ".raw") {
+			// raw files (having .raw) should have the VMID in the path
+			npp.SCSI0 = d.Storage + ":" + d.VMID + "/" + volume.Filename
+		} else {
+			npp.SCSI0 = d.Storage + ":" + volume.Filename
+		}
 	}
 	d.debugf("Creating VM '%s' with '%d' of memory", npp.VMID, npp.Memory)
 	taskid, err := d.driver.NodesNodeQemuPost(d.Node, &npp)
