@@ -100,16 +100,20 @@ If you have additional test storages, you can also add them easily:
         pvesh set /pools/docker-machine -storage lvm
         pvesh set /pools/docker-machine -storage directory
 
+Ceph is currently untested to the a lack of test environment. If you want to step in, please open an issue.
 
 ## Changes
 
-### Version 3 (WIP)
+### Version 3
 
 * Renaming driver from `proxmox-ve` to `proxmoxve` due to identification problem with RancherOS's K8S implementation (Thanks to [`@Sellto` for reporting #16](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/issues/16))
 * fixing issue with created disk detection (Thanks to [`@Sellto` for reporting #16](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/issues/16))
-* Add `IPAddress` property needed by rancher to know the ip address of the created VM.
-* Change the name of each flag for better display in the rancher `Node Templates`
-* Add number of `CPU cores configuration paramater`.
+* Add `IPAddress` property needed by rancher to know the ip address of the created VM. (`@Sellto`)
+* Change the name of each flag for better display in the rancher `Node Templates` (`@Sellto`)
+* Add number of `CPU cores configuration paramater`. (`@Sellto`)
+* LVM-thin fixes (`@vstconsulting`)
+* Bridge and VLAN tag support (`@bemanuel`)
+* Fixing filename detection including NFS support
 
 ### Version 2
 
