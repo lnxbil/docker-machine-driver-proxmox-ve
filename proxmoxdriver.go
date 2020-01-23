@@ -53,9 +53,9 @@ type Driver struct {
 	GuestUsername string // user to log into the guest OS to copy the public key
 	GuestPassword string // password to log into the guest OS to copy the public key
 	GuestSSHPort  int    // ssh port to log into the guest OS to copy the public key
-	Cores       string
-	driverDebug bool // driver debugging
-	restyDebug  bool // enable resty debugging
+	Cores         string
+	driverDebug   bool // driver debugging
+	restyDebug    bool // enable resty debugging
 }
 
 func (d *Driver) debugf(format string, v ...interface{}) {
