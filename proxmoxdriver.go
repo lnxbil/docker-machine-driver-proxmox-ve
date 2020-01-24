@@ -54,8 +54,13 @@ type Driver struct {
 	GuestPassword string // password to log into the guest OS to copy the public key
 	GuestSSHPort  int    // ssh port to log into the guest OS to copy the public key
 	Cores         string
-	driverDebug   bool // driver debugging
-	restyDebug    bool // enable resty debugging
+	CPU           string
+	SCSIArgs      string
+	SCSIControl   string
+	NUMA          string
+	OnBoot        string // boot vm on starting service
+	driverDebug   bool   // driver debugging
+	restyDebug    bool   // enable resty debugging
 }
 
 func (d *Driver) debugf(format string, v ...interface{}) {
@@ -152,10 +157,27 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  8,
 		},
 		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_SCSI_ARGS",
+			Name:   "proxmoxve-vm-scsi-args",
+			Usage:  "additional scsi settings",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_SCSI_CONTROLLER",
+			Name:   "proxmoxve-vm-scsi-controller",
+			Usage:  "set scsi controller model",
+			Value:  "lsi",
+		},
+		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_VM_CPU",
 			Name:   "proxmoxve-vm-cpu-cores",
 			Usage:  "number of cpu cores",
 			Value:  "2",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_CPU_ARGS",
+			Name:   "proxmoxve-vm-cpu-args",
+			Usage:  "additional cpu settings",
+			Value:  "",
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_VM_IMAGE_FILE",
@@ -174,6 +196,18 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:   "proxmoxve-vm-net-tag",
 			Usage:  "vlan tag",
 			Value:  0,
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_ONBOOT",
+			Name:   "proxmoxve-vm-onboot",
+			Usage:  "enable/disable vm boot on proxmox start",
+			Value:  "0",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_NUMA",
+			Name:   "proxmoxve-vm-numa",
+			Usage:  "enable/disable NUMA",
+			Value:  "0",
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_SSH_USERNAME",
@@ -241,14 +275,29 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.Realm = flags.String("proxmoxve-proxmox-realm")
 	d.Pool = flags.String("proxmoxve-proxmox-pool")
 
-	// VM configuration
+	/* VM configuration */
+	d.OnBoot = flags.String("proxmox-vm-onboot")
+
+	// Disk configuration
 	d.DiskSize = flags.String("proxmoxve-vm-storage-size")
 	d.Storage = flags.String("proxmoxve-vm-storage-path")
 	d.StorageType = strings.ToLower(flags.String("proxmoxve-vm-storage-type"))
+	d.ImageFile = flags.String("proxmoxve-vm-image-file")
+
+	// SCSI configuration
+	d.SCSIControl = flags.String("proxmoxve-vm-scsi-controller")
+	d.SCSIArgs = flags.String("proxmoxve-vm-scsi-args")
+
+	// Memory configuration
 	d.Memory = flags.Int("proxmoxve-vm-memory")
 	d.Memory *= 1024
-	d.ImageFile = flags.String("proxmoxve-vm-image-file")
+	d.NUMA = flags.String("proxmoxve-vm-numa")
+
+	// Processor configuration
 	d.Cores = flags.String("proxmoxve-vm-cpu-cores")
+	d.CPU = flags.String("proxmoxve-vm-cpu-args")
+
+	// Network configuration
 	d.NetBridge = flags.String("proxmoxve-vm-net-bridge")
 	d.NetVlanTag = flags.Int("proxmoxve-vm-net-tag")
 
@@ -420,13 +469,17 @@ func (d *Driver) Create() error {
 		Autostart: "1",
 		Memory:    d.Memory,
 		Cores:     d.Cores,
-		Net0:      "virtio,bridge=vmbr0",
+		Net0:      "virtio,bridge=" + d.NetBridge,
 		SCSI0:     d.StorageFilename,
+		SCSIHw:    d.SCSIControl,
 		Ostype:    "l26",
 		Name:      d.BaseDriver.MachineName,
 		KVM:       "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization
 		Cdrom:     d.ImageFile,
 		Pool:      d.Pool,
+		CPU:       d.CPU,
+		OnBoot:    d.OnBoot,
+		NUMA:      d.NUMA,
 	}
 
 	if d.NetVlanTag != 0 {
@@ -440,8 +493,11 @@ func (d *Driver) Create() error {
 			// raw files (having .raw) should have the VMID in the path
 			npp.SCSI0 = d.Storage + ":" + d.VMID + "/" + volume.Filename
 		} else {
-			npp.SCSI0 = d.Storage + ":" + volume.Filename
+			npp.SCSI0 = "local-lvm-thinpool-test:" + volume.Filename
 		}
+	}
+	if d.SCSIArgs != "" {
+		npp.SCSI0 += "," + d.SCSIArgs
 	}
 	d.debugf("Creating VM '%s' with '%d' of memory", npp.VMID, npp.Memory)
 	taskid, err := d.driver.NodesNodeQemuPost(d.Node, &npp)

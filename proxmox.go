@@ -310,6 +310,10 @@ type NodesNodeQemuPostParameter struct {
 	Pool      string // optional, Add the VM to the specified pool.
 	Cores     string // optional, The number of cores per socket.
 	Cdrom     string // optional, This is an alias for option -ide2
+	CPU       string // optional, This is cpu settings
+	NUMA      string // Enable/disable NUMA
+	OnBoot    string // Enable/disable OnBoot
+	SCSIHw    string // set controller
 }
 
 type nNodesNodeQemuPostParameter struct {
