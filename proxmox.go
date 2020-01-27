@@ -433,6 +433,14 @@ func (p ProxmoxVE) NodesNodeQemuVMIDStatusStopPost(node string, vmid string) err
 	return err
 }
 
+//NodesNodeQemuVMIDConfigGet access the API
+func (p ProxmoxVE) NodesNodeQemuVMIDConfigGet(node string, vmid string) (output map[string]interface{}, err error) {
+
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/config", node, vmid)
+	err = p.get(nil, &output, path)
+	return output, err
+}
+
 func unmarshallString(data string, value string) (string, error) {
 	var f map[string]interface{}
 	err := json.Unmarshal([]byte(data), &f)

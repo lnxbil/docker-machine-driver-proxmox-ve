@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -61,6 +62,8 @@ type Driver struct {
 	OnBoot        string // boot vm on starting service
 	driverDebug   bool   // driver debugging
 	restyDebug    bool   // enable resty debugging
+
+	UUID string
 }
 
 func (d *Driver) debugf(format string, v ...interface{}) {
@@ -73,6 +76,27 @@ func (d *Driver) debug(v ...interface{}) {
 	if d.driverDebug {
 		log.Info(v...)
 	}
+}
+
+func getUUIDFromSmbios1(str string) string {
+	var re = regexp.MustCompile(`(?m)uuid=([\d\w-]{1,})[,]{0,1}.*$`)
+	return re.FindStringSubmatch(fmt.Sprintf("%s", str))[1]
+}
+
+func (d *Driver) checkVmidEquality() (bool, error) {
+
+	output, err := d.driver.NodesNodeQemuVMIDConfigGet(d.Node, d.VMID)
+	if err != nil {
+		return false, err
+	}
+
+	proxmoxVMUUID := getUUIDFromSmbios1(fmt.Sprintf("%s", output["smbios1"]))
+
+	if proxmoxVMUUID != "" && d.UUID != "" && proxmoxVMUUID == d.UUID {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func (d *Driver) connectAPI() error {
@@ -463,13 +487,15 @@ func (d *Driver) Create() error {
 		return fmt.Errorf("returned diskname is not correct: should be '%s' but was '%s'", d.StorageFilename, diskname)
 	}
 
+	net0 := fmt.Sprintf("virtio,bridge=%s", d.NetBridge)
+
 	npp := NodesNodeQemuPostParameter{
 		VMID:      d.VMID,
 		Agent:     "1",
 		Autostart: "1",
 		Memory:    d.Memory,
 		Cores:     d.Cores,
-		Net0:      "virtio,bridge=" + d.NetBridge,
+		Net0:      net0,
 		SCSI0:     d.StorageFilename,
 		SCSIHw:    d.SCSIControl,
 		Ostype:    "l26",
@@ -483,7 +509,7 @@ func (d *Driver) Create() error {
 	}
 
 	if d.NetVlanTag != 0 {
-		npp.Net0 = fmt.Sprintf("virtio,bridge=%s,tag=%d", d.NetBridge, d.NetVlanTag)
+		npp.Net0 += fmt.Sprintf(",tag=%d", d.NetVlanTag)
 	}
 
 	if d.StorageType == "qcow2" {
@@ -509,6 +535,13 @@ func (d *Driver) Create() error {
 	if err != nil {
 		return err
 	}
+
+	output, err := d.driver.NodesNodeQemuVMIDConfigGet(d.Node, d.VMID)
+	if err != nil {
+		return err
+	}
+	d.UUID = getUUIDFromSmbios1(fmt.Sprintf("%s", output["smbios1"]))
+
 	err = d.Start()
 	if err != nil {
 		return err
@@ -624,6 +657,10 @@ func (d *Driver) Kill() error {
 func (d *Driver) Remove() error {
 	err := d.connectAPI()
 	if err != nil {
+		return err
+	}
+	fmt.Println("Check equality of local and remote VMID")
+	if equal, err := d.checkVmidEquality(); err != nil || !equal {
 		return err
 	}
 	taskid, err := d.driver.NodesNodeQemuVMIDDelete(d.Node, d.VMID)
