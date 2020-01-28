@@ -119,146 +119,148 @@ func (d *Driver) connectAPI() error {
 
 // GetCreateFlags returns the argument flags for the program
 func (d *Driver) GetCreateFlags() []mcnflag.Flag {
+	driverName := d.DriverName()
+	upperDriverName := strings.ToUpper(driverName)
 	return []mcnflag.Flag{
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_PROXMOX_HOST",
-			Name:   "proxmoxve-proxmox-host",
+			EnvVar: upperDriverName + "_PROXMOX_HOST",
+			Name:   driverName + "-proxmox-host",
 			Usage:  "Host to connect to",
 			Value:  "192.168.1.253",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_PROXMOX_NODE",
-			Name:   "proxmoxve-proxmox-node",
+			EnvVar: upperDriverName + "_PROXMOX_NODE",
+			Name:   driverName + "-proxmox-node",
 			Usage:  "to to use (defaults to host)",
 			Value:  "",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_PROXMOX_USER_NAME",
-			Name:   "proxmoxve-proxmox-user-name",
+			EnvVar: upperDriverName + "_PROXMOX_USER_NAME",
+			Name:   driverName + "-proxmox-user-name",
 			Usage:  "User to connect as",
 			Value:  "root",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_PROXMOX_USER_PASSWORD",
-			Name:   "proxmoxve-proxmox-user-password",
+			EnvVar: upperDriverName + "_PROXMOX_USER_PASSWORD",
+			Name:   driverName + "-proxmox-user-password",
 			Usage:  "Password to connect with",
 			Value:  "",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_PROXMOX_REALM",
-			Name:   "proxmoxve-proxmox-realm",
+			EnvVar: upperDriverName + "_PROXMOX_REALM",
+			Name:   driverName + "-proxmox-realm",
 			Usage:  "Realm to connect to (default: pam)",
 			Value:  "pam",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_PROXMOX_POOL",
-			Name:   "proxmoxve-proxmox-pool",
+			EnvVar: upperDriverName + "_PROXMOX_POOL",
+			Name:   driverName + "-proxmox-pool",
 			Usage:  "pool to attach to",
 			Value:  "",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_STORAGE_PATH",
-			Name:   "proxmoxve-vm-storage-path",
+			EnvVar: upperDriverName + "_VM_STORAGE_PATH",
+			Name:   driverName + "-vm-storage-path",
 			Usage:  "storage to create the VM volume on",
 			Value:  "local",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_STORAGE_SIZE",
-			Name:   "proxmoxve-vm-storage-size",
+			EnvVar: upperDriverName + "_VM_STORAGE_SIZE",
+			Name:   driverName + "-vm-storage-size",
 			Usage:  "disk size in GB",
 			Value:  "16",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_STORAGE_TYPE",
-			Name:   "proxmoxve-vm-storage-type",
+			EnvVar: upperDriverName + "_VM_STORAGE_TYPE",
+			Name:   driverName + "-vm-storage-type",
 			Usage:  "storage type to use (QCOW2 or RAW)",
 			Value:  "raw",
 		},
 		mcnflag.IntFlag{
-			EnvVar: "PROXMOXVE_VM_MEMORY",
-			Name:   "proxmoxve-vm-memory",
+			EnvVar: upperDriverName + "_VM_MEMORY",
+			Name:   driverName + "-vm-memory",
 			Usage:  "memory in GB",
 			Value:  8,
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_SCSI_ARGS",
-			Name:   "proxmoxve-vm-scsi-args",
+			EnvVar: upperDriverName + "_VM_SCSI_ARGS",
+			Name:   driverName + "-vm-scsi-args",
 			Usage:  "additional scsi settings",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_SCSI_CONTROLLER",
-			Name:   "proxmoxve-vm-scsi-controller",
+			EnvVar: upperDriverName + "_VM_SCSI_CONTROLLER",
+			Name:   driverName + "-vm-scsi-controller",
 			Usage:  "set scsi controller model",
 			Value:  "lsi",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_CPU",
-			Name:   "proxmoxve-vm-cpu-cores",
+			EnvVar: upperDriverName + "_VM_CPU",
+			Name:   driverName + "-vm-cpu-cores",
 			Usage:  "number of cpu cores",
 			Value:  "2",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_CPU_ARGS",
-			Name:   "proxmoxve-vm-cpu-args",
+			EnvVar: upperDriverName + "_VM_CPU_ARGS",
+			Name:   driverName + "-vm-cpu-args",
 			Usage:  "additional cpu settings",
 			Value:  "",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_IMAGE_FILE",
-			Name:   "proxmoxve-vm-image-file",
+			EnvVar: upperDriverName + "_VM_IMAGE_FILE",
+			Name:   driverName + "-vm-image-file",
 			Usage:  "storage of the image file (e.g. local:iso/rancheros-proxmoxve-autoformat.iso)",
 			Value:  "",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_NET_BRIDGE",
-			Name:   "proxmoxve-vm-net-bridge",
+			EnvVar: upperDriverName + "_VM_NET_BRIDGE",
+			Name:   driverName + "-vm-net-bridge",
 			Usage:  "bridge to attach network to",
 			Value:  "vmbr0",
 		},
 		mcnflag.IntFlag{
-			EnvVar: "PROXMOXVE_VM_NET_TAG",
-			Name:   "proxmoxve-vm-net-tag",
+			EnvVar: upperDriverName + "_VM_NET_TAG",
+			Name:   driverName + "-vm-net-tag",
 			Usage:  "vlan tag",
 			Value:  0,
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_ONBOOT",
-			Name:   "proxmoxve-vm-onboot",
+			EnvVar: upperDriverName + "_ONBOOT",
+			Name:   driverName + "-vm-onboot",
 			Usage:  "enable/disable vm boot on proxmox start",
 			Value:  "0",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_NUMA",
-			Name:   "proxmoxve-vm-numa",
+			EnvVar: upperDriverName + "_NUMA",
+			Name:   driverName + "-vm-numa",
 			Usage:  "enable/disable NUMA",
 			Value:  "0",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_SSH_USERNAME",
-			Name:   "proxmoxve-ssh-username",
+			EnvVar: upperDriverName + "_SSH_USERNAME",
+			Name:   driverName + "-ssh-username",
 			Usage:  "Username to log in to the guest OS (default docker for rancheros)",
 			Value:  "docker",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_SSH_PASSWORD",
-			Name:   "proxmoxve-ssh-password",
+			EnvVar: upperDriverName + "_SSH_PASSWORD",
+			Name:   driverName + "-ssh-password",
 			Usage:  "Password to log in to the guest OS (default tcuser for rancheros)",
 			Value:  "tcuser",
 		},
 		mcnflag.IntFlag{
-			EnvVar: "PROXMOXVE_SSH_PORT",
-			Name:   "proxmoxve-ssh-port",
+			EnvVar: upperDriverName + "_SSH_PORT",
+			Name:   driverName + "-ssh-port",
 			Usage:  "SSH port in the guest to log in to (defaults to 22)",
 			Value:  22,
 		},
 		mcnflag.BoolFlag{
-			EnvVar: "PROXMOXVE_DEBUG_RESTY",
-			Name:   "proxmoxve-debug-resty",
+			EnvVar: upperDriverName + "_DEBUG_RESTY",
+			Name:   driverName + "-debug-resty",
 			Usage:  "enables the resty debugging",
 		},
 		mcnflag.BoolFlag{
-			EnvVar: "PROXMOXVE_DEBUG_DRIVER",
-			Name:   "proxmoxve-debug-driver",
+			EnvVar: upperDriverName + "_DEBUG_DRIVER",
+			Name:   driverName + "-debug-driver",
 			Usage:  "enables debugging in the driver",
 		},
 	}
@@ -288,55 +290,56 @@ func (d *Driver) DriverName() string {
 // SetConfigFromFlags configures all command line arguments
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.debug("SetConfigFromFlags called")
+	driverName := d.DriverName()
 	// PROXMOX API Connection settings
-	d.Host = flags.String("proxmoxve-proxmox-host")
-	d.Node = flags.String("proxmoxve-proxmox-node")
+	d.Host = flags.String(driverName + "-proxmox-host")
+	d.Node = flags.String(driverName + "-proxmox-node")
 	if len(d.Node) == 0 {
 		d.Node = d.Host
 	}
-	d.User = flags.String("proxmoxve-proxmox-user-name")
-	d.Password = flags.String("proxmoxve-proxmox-user-password")
-	d.Realm = flags.String("proxmoxve-proxmox-realm")
-	d.Pool = flags.String("proxmoxve-proxmox-pool")
+	d.User = flags.String(driverName + "-proxmox-user-name")
+	d.Password = flags.String(driverName + "-proxmox-user-password")
+	d.Realm = flags.String(driverName + "-proxmox-realm")
+	d.Pool = flags.String(driverName + "-proxmox-pool")
 
 	/* VM configuration */
-	d.OnBoot = flags.String("proxmox-vm-onboot")
+	d.OnBoot = flags.String(driverName + "-vm-onboot")
 
 	// Disk configuration
-	d.DiskSize = flags.String("proxmoxve-vm-storage-size")
-	d.Storage = flags.String("proxmoxve-vm-storage-path")
-	d.StorageType = strings.ToLower(flags.String("proxmoxve-vm-storage-type"))
-	d.ImageFile = flags.String("proxmoxve-vm-image-file")
+	d.DiskSize = flags.String(driverName + "-vm-storage-size")
+	d.Storage = flags.String(driverName + "-vm-storage-path")
+	d.StorageType = strings.ToLower(flags.String(driverName + "-vm-storage-type"))
+	d.ImageFile = flags.String(driverName + "-vm-image-file")
 
 	// SCSI configuration
-	d.SCSIControl = flags.String("proxmoxve-vm-scsi-controller")
-	d.SCSIArgs = flags.String("proxmoxve-vm-scsi-args")
+	d.SCSIControl = flags.String(driverName + "-vm-scsi-controller")
+	d.SCSIArgs = flags.String(driverName + "-vm-scsi-args")
 
 	// Memory configuration
-	d.Memory = flags.Int("proxmoxve-vm-memory")
+	d.Memory = flags.Int(driverName + "-vm-memory")
 	d.Memory *= 1024
-	d.NUMA = flags.String("proxmoxve-vm-numa")
+	d.NUMA = flags.String(driverName + "-vm-numa")
 
 	// Processor configuration
-	d.Cores = flags.String("proxmoxve-vm-cpu-cores")
-	d.CPU = flags.String("proxmoxve-vm-cpu-args")
+	d.Cores = flags.String(driverName + "-vm-cpu-cores")
+	d.CPU = flags.String(driverName + "-vm-cpu-args")
 
 	// Network configuration
-	d.NetBridge = flags.String("proxmoxve-vm-net-bridge")
-	d.NetVlanTag = flags.Int("proxmoxve-vm-net-tag")
+	d.NetBridge = flags.String(driverName + "-vm-net-bridge")
+	d.NetVlanTag = flags.Int(driverName + "-vm-net-tag")
 
 	//SSH connection settings
-	d.GuestSSHPort = flags.Int("proxmoxve-ssh-port")
-	d.GuestUsername = flags.String("proxmoxve-ssh-username")
-	d.GuestPassword = flags.String("proxmoxve-ssh-password")
+	d.GuestSSHPort = flags.Int(driverName + "-ssh-port")
+	d.GuestUsername = flags.String(driverName + "-ssh-username")
+	d.GuestPassword = flags.String(driverName + "-ssh-password")
 
 	//SWARM Settings
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
 
 	//Debug option
-	d.driverDebug = flags.Bool("proxmoxve-debug-driver")
-	d.restyDebug = flags.Bool("proxmoxve-debug-resty")
+	d.driverDebug = flags.Bool(driverName + "-debug-driver")
+	d.restyDebug = flags.Bool(driverName + "-debug-resty")
 
 	if d.restyDebug {
 		d.debug("enabling Resty debugging")
