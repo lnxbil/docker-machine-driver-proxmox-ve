@@ -25,6 +25,9 @@ import (
 	"github.com/labstack/gommon/log"
 )
 
+//Define driver name
+var dName string = "proxmoxve"
+
 // Driver for Proxmox VE
 type Driver struct {
 	*drivers.BaseDriver
@@ -284,7 +287,7 @@ func (d *Driver) ping() bool {
 
 // DriverName returns the name of the driver
 func (d *Driver) DriverName() string {
-	return "proxmoxve"
+	return dName
 }
 
 // SetConfigFromFlags configures all command line arguments
