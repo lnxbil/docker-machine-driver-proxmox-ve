@@ -42,6 +42,7 @@ type Driver struct {
 	Pool            string // pool to add the VM to (necessary for users with only pool permission)
 	Storage         string // internal PVE storage name
 	StorageType     string // Type of the storage (currently QCOW2 and RAW)
+	Scsihw			string // Model of controller scsi ( currently lsi | lsi53c810 | megasas | pvscsi | virtio-scsi-pci | virtio-scsi-single )
 	DiskSize        string // disk size in GB
 	Memory          int    // memory in GB
 	StorageFilename string
@@ -126,6 +127,12 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:   "proxmoxve-proxmox-pool",
 			Usage:  "pool to attach to",
 			Value:  "",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_SCSI_CONTROLLER",
+			Name:   "proxmoxve-vm-scsihw",
+			Usage:  "scsi controller model (default: virtio-scsi-pci)",
+			Value:  "virtio-scsi-pci",
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_VM_STORAGE_PATH",
@@ -242,6 +249,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.Pool = flags.String("proxmoxve-proxmox-pool")
 
 	// VM configuration
+	d.Scsihw = flags.String("proxmoxve-vm-scsihw")
 	d.DiskSize = flags.String("proxmoxve-vm-storage-size")
 	d.Storage = flags.String("proxmoxve-vm-storage-path")
 	d.StorageType = strings.ToLower(flags.String("proxmoxve-vm-storage-type"))
@@ -421,6 +429,7 @@ func (d *Driver) Create() error {
 		Memory:    d.Memory,
 		Cores:     d.Cores,
 		Net0:      "virtio,bridge=vmbr0",
+		Scsihw:	   d.Scsihw,
 		SCSI0:     d.StorageFilename,
 		Ostype:    "l26",
 		Name:      d.BaseDriver.MachineName,

@@ -304,6 +304,7 @@ type NodesNodeQemuPostParameter struct {
 	Agent     string // optional, Enable/disable Qemu GuestAgent.
 	Net0      string
 	Name      string // optional, Set a name for the VM. Only used on the configuration web interface.
+	Scsihw    string   // optional, SCSI controller model
 	SCSI0     string // optional, Use volume as VIRTIO hard disk (n is 0 to 15).
 	Ostype    string // optional, Specify guest operating system.
 	KVM       string // optional, Enable/disable KVM hardware virtualization.
