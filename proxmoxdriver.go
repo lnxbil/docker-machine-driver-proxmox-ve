@@ -525,7 +525,7 @@ func (d *Driver) Create() error {
 			// raw files (having .raw) should have the VMID in the path
 			npp.SCSI0 = d.Storage + ":" + d.VMID + "/" + volume.Filename
 		} else {
-			npp.SCSI0 = "local-lvm-thinpool-test:" + volume.Filename
+			npp.SCSI0 = d.Storage + ":" + volume.Filename
 		}
 	}
 	if d.SCSIArgs != "" {
