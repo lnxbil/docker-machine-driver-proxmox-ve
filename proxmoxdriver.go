@@ -420,7 +420,6 @@ func (d *Driver) Create() error {
 		Autostart: "1",
 		Memory:    d.Memory,
 		Cores:     d.Cores,
-		Net0:      "virtio,bridge=vmbr0",
 		SCSI0:     d.StorageFilename,
 		Ostype:    "l26",
 		Name:      d.BaseDriver.MachineName,
@@ -429,8 +428,9 @@ func (d *Driver) Create() error {
 		Pool:      d.Pool,
 	}
 
+	npp.Net0 = fmt.Sprintf("virtio,bridge=%s", d.NetBridge)
 	if d.NetVlanTag != 0 {
-		npp.Net0 = fmt.Sprintf("virtio,bridge=%s,tag=%d", d.NetBridge, d.NetVlanTag)
+		npp.Net0 = fmt.Sprintf(npp.Net0 + ",tag=%d", d.NetVlanTag)
 	}
 
 	if d.StorageType == "qcow2" {
