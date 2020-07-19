@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -299,7 +300,7 @@ func (p ProxmoxVE) ClusterNextIDGet(id int) (vmid string, err error) {
 // Create or restore a virtual machine.
 type NodesNodeQemuPostParameter struct {
 	VMID      string // The (unique) ID of the VM.
-	Memory    int    // optional, Amount of RAM for the VM in MB. This is the maximum available memory when you use the balloon device.
+	Memory    int    `json:"memory,omitempty"` // optional, Amount of RAM for the VM in MB. This is the maximum available memory when you use the balloon device.
 	Autostart string // optional, Automatic restart after crash (currently ignored).
 	Agent     string // optional, Enable/disable Qemu GuestAgent.
 	Net0      string
@@ -308,7 +309,8 @@ type NodesNodeQemuPostParameter struct {
 	Ostype    string // optional, Specify guest operating system.
 	KVM       string // optional, Enable/disable KVM hardware virtualization.
 	Pool      string // optional, Add the VM to the specified pool.
-	Cores     string // optional, The number of cores per socket.
+	Sockets   string `json:"sockets,omitempty"` // optional, The number of cpus.
+	Cores     string `json:"cores,omitempty"`   // optional, The number of cores per socket.
 	Cdrom     string // optional, This is an alias for option -ide2
 }
 
@@ -387,12 +389,96 @@ func (p ProxmoxVE) NodesNodeQemuPost(node string, input *NodesNodeQemuPostParame
 	return taskid, err
 }
 
-// NodesNodeQemuVMIDStatusStartPost access the API
-// Start virtual machine.
-func (p ProxmoxVE) NodesNodeQemuVMIDStatusStartPost(node string, vmid string) (taskid string, err error) {
-	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/start", node, vmid)
-	err = p.post(nil, &taskid, path)
+// NodesNodeQemuVMIDClonePostParameter represents the input data for /nodes/{node}/qemu/{vmid}/clone
+// Original Description:
+// Create a copy of virtual machine/template.
+type NodesNodeQemuVMIDClonePostParameter struct {
+	Newid string // VMID for the clone.
+	VMID  string // The (unique) ID of the VM.
+	Name  string // Set a name for the new VM.
+	Pool  string // Add the new VM to the specified pool.
+}
+
+// NodesNodeQemuVMIDClonePost access the API
+// Create a copy of virtual machine/template.
+func (p ProxmoxVE) NodesNodeQemuVMIDClonePost(node string, vmid string, input *NodesNodeQemuVMIDClonePostParameter) (taskid string, err error) {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/clone", node, vmid)
+	err = p.post(input, &taskid, path)
 	return taskid, err
+}
+
+// NodesNodeQemuVMIDResizePutParameter represents the input data for /nodes/{node}/qemu/{vmid}/resize
+// Original Description:
+// Extend volume size.
+type NodesNodeQemuVMIDResizePutParameter struct {
+	Disk string // The disk you want to resize.
+	Size string // The new size.
+}
+
+// NodesNodeQemuVMIDResizePut access the API
+// Extend volume size.
+func (p ProxmoxVE) NodesNodeQemuVMIDResizePut(node string, vmid string, input *NodesNodeQemuVMIDResizePutParameter) (err error) {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/resize", node, vmid)
+	err = p.put(input, nil, path)
+	return err
+}
+
+// NodesNodeQemuVMIDConfigPost access the API
+// Set config options
+func (p ProxmoxVE) NodesNodeQemuVMIDConfigPost(node string, vmid string, input *NodesNodeQemuPostParameter) (taskid string, err error) {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/config", node, vmid)
+	err = p.post(input, &taskid, path)
+	return taskid, err
+}
+
+// NodesNodeQemuVMIDConfigSetSSHKeys access the API
+// Set config options
+// https://forum.proxmox.com/threads/how-to-use-pvesh-set-vms-sshkeys.52570/
+// cray encoding style *AND* double-encoded
+func (p ProxmoxVE) NodesNodeQemuVMIDConfigSetSSHKeys(node string, vmid string, SSHKeys string) (taskid string, err error) {
+	r := strings.NewReplacer("+", "%2B", "=", "%3D", "@", "%40")
+
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/config", node, vmid)
+	SSHKeys = url.PathEscape(SSHKeys)
+	SSHKeys = r.Replace(SSHKeys)
+
+	SSHKeys = url.PathEscape(SSHKeys)
+	SSHKeys = r.Replace(SSHKeys)
+
+	response, err := p.client.R().SetHeader("Content-Type", "application/x-www-form-urlencoded").SetBody("sshkeys=" + SSHKeys).Post(p.getURL(path))
+
+	if err != nil {
+		return "", err
+	}
+	code := response.StatusCode()
+
+	if code < 200 || code > 300 {
+		return "", fmt.Errorf("status code was '%d' and error is\n%s", code, response.Status())
+	}
+
+	var f map[string]interface{}
+
+	err = json.Unmarshal([]byte(response.String()), &f)
+	if err != nil {
+		return "", err
+	}
+	zz, err := json.Marshal(f["data"])
+	if err != nil {
+		return "", err
+	}
+
+	err = json.Unmarshal(zz, &taskid)
+
+	return taskid, err
+}
+
+// NodesNodeQemuVMIDConfigGet access the API
+// Get the virtual machine configuration with pending configuration changes applied. Set the 'current' parameter to get the current configuration instead.
+func (p ProxmoxVE) NodesNodeQemuVMIDConfigGet(node string, vmid string) (err error) {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/config", node, vmid)
+	var i, r interface{}
+	err = p.get(i, &r, path)
+	return err
 }
 
 // NodesNodeQemuVMIDAgentPostParameter represents the input data for /nodes/{node}/qemu/{vmid}/agent
@@ -421,12 +507,60 @@ func (p ProxmoxVE) NodesNodeQemuVMIDDelete(node string, vmid string) (taskid str
 	return taskid, err
 }
 
+// NodesNodeQemuVMIDStatusRebootPost access the API
+// Reboot the VM by shutting it down, and starting it again. Applies pending changes.
+func (p ProxmoxVE) NodesNodeQemuVMIDStatusRebootPost(node string, vmid string) (taskid string, err error) {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/reboot", node, vmid)
+	err = p.post(nil, &taskid, path)
+	return taskid, err
+}
+
+// NodesNodeQemuVMIDStatusResetPost access the API
+// Reset virtual machine.
+func (p ProxmoxVE) NodesNodeQemuVMIDStatusResetPost(node string, vmid string) (taskid string, err error) {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/reset", node, vmid)
+	err = p.post(nil, &taskid, path)
+	return taskid, err
+}
+
+// NodesNodeQemuVMIDStatusResumePost access the API
+// Resume virtual machine.
+func (p ProxmoxVE) NodesNodeQemuVMIDStatusResumePost(node string, vmid string) (taskid string, err error) {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/resume", node, vmid)
+	err = p.post(nil, &taskid, path)
+	return taskid, err
+}
+
+// NodesNodeQemuVMIDStatusShutdownPost access the API
+// Shutdown virtual machine. This is similar to pressing the power button on a physical machine.This will send an ACPI event for the guest OS, which should then proceed to a clean shutdown.
+func (p ProxmoxVE) NodesNodeQemuVMIDStatusShutdownPost(node string, vmid string) (taskid string, err error) {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/shutdown", node, vmid)
+	err = p.post(nil, &taskid, path)
+	return taskid, err
+}
+
+// NodesNodeQemuVMIDStatusStartPost access the API
+// Start virtual machine.
+func (p ProxmoxVE) NodesNodeQemuVMIDStatusStartPost(node string, vmid string) (taskid string, err error) {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/start", node, vmid)
+	err = p.post(nil, &taskid, path)
+	return taskid, err
+}
+
 // NodesNodeQemuVMIDStatusStopPost access the API
-// Stop virtual machine. The qemu process will exit immediately. Thisis akin to pulling the power plug of a running computer and may damage the VM data
-func (p ProxmoxVE) NodesNodeQemuVMIDStatusStopPost(node string, vmid string) error {
+// Stop virtual machine. The qemu process will exit immediately. This is akin to pulling the power plug of a running computer and may damage the VM data
+func (p ProxmoxVE) NodesNodeQemuVMIDStatusStopPost(node string, vmid string) (taskid string, err error) {
 	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/stop", node, vmid)
-	err := p.post(nil, nil, path)
-	return err
+	err = p.post(nil, &taskid, path)
+	return taskid, err
+}
+
+// NodesNodeQemuVMIDStatusSuspendPost access the API
+// Suspend virtual machine.
+func (p ProxmoxVE) NodesNodeQemuVMIDStatusSuspendPost(node string, vmid string) (taskid string, err error) {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/suspend", node, vmid)
+	err = p.post(nil, &taskid, path)
+	return taskid, err
 }
 
 func unmarshallString(data string, value string) (string, error) {
@@ -529,6 +663,30 @@ func (bit IntBool) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("Boolean unmarshal error: invalid input %s", asString)
 	}
 	return nil
+}
+
+// ConfigReturn represents the config response from the API
+type ConfigReturn struct {
+	Data struct {
+		OSType  string  `json:"ostype"`
+		SCSI0   string  `json:"scsi0"`
+		CPU     string  `json:"cpu"`
+		ONBoot  IntBool `json:"onboot"`
+		SSHKeys string  `json:"sshkeys"`
+	} `json:"data"`
+}
+
+// GetConfig returns the vm configuration data
+func (p ProxmoxVE) GetConfig(node string, vmid string) (ConfigReturn, error) {
+	path := fmt.Sprintf("/nodes/%s/qemu/%s/config", node, vmid)
+
+	response, err := p.client.R().Get(p.getURL(path))
+
+	var a ConfigReturn
+	resp := response.String()
+	err = json.Unmarshal([]byte(resp), &a)
+
+	return a, err
 }
 
 // StorageReturn represents the storage response from the API
