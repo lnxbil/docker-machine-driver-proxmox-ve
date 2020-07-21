@@ -52,9 +52,18 @@ type Driver struct {
 	Onboot          string // Specifies whether a VM will be started during system bootup.
 	Protection      string // Sets the protection flag of the VM. This will disable the remove VM and remove disk operations.
 	Citype          string // Specifies the cloud-init configuration format.
+	NUMA            string // Enable/disable NUMA
 
-	NetBridge  string // bridge applied to network interface
-	NetVlanTag int    // vlan tag
+	CiEnabled string
+
+	NetModel    string // Net Interface Model, [e1000, virtio, realtek, etc...]
+	NetFirewall string // Enable/disable firewall
+	NetMtu      string // set nic MTU
+	NetBridge   string // bridge applied to network interface
+	NetVlanTag  int    // vlan tag
+
+	ScsiController string
+	ScsiAttributes string
 
 	VMID          string // VM ID only filled by create()
 	CloneVMID     string // VM ID to clone
@@ -62,8 +71,9 @@ type Driver struct {
 	GuestUsername string // user to log into the guest OS to copy the public key
 	GuestPassword string // password to log into the guest OS to copy the public key
 	GuestSSHPort  int    // ssh port to log into the guest OS to copy the public key
-	Sockets       string // The number of cpu sockets.
-	Cores         string // The number of cores per socket.
+	CPU           string // Emulated CPU type.
+	CPUSockets    string // The number of cpu sockets.
+	CPUCores      string // The number of cores per socket.
 	driverDebug   bool   // driver debugging
 	restyDebug    bool   // enable resty debugging
 }
@@ -161,11 +171,35 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Usage:  "storage type to use (QCOW2 or RAW)",
 			Value:  "", // leave the flag default value blank to support the clone default behavior if not explicity set of 'use what is most appropriate'
 		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_SCSI_CONTROLLER",
+			Name:   "proxmoxve-vm-scsi-controller",
+			Usage:  "scsi controller model (default: virtio-scsi-pci)",
+			Value:  "virtio-scsi-pci",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_SCSI_ATTRIBUTES",
+			Name:   "proxmoxve-vm-scsi-attributes",
+			Usage:  "scsi0 attributes",
+			Value:  "",
+		},
 		mcnflag.IntFlag{
 			EnvVar: "PROXMOXVE_VM_MEMORY",
 			Name:   "proxmoxve-vm-memory",
 			Usage:  "memory in GB",
 			Value:  8,
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_NUMA",
+			Name:   "proxmoxve-vm-numa",
+			Usage:  "enable/disable NUMA",
+			Value:  "", // leave the flag default value blank to support the clone default behavior if not explicity set of 'use what is most appropriate'
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_CPU",
+			Name:   "proxmoxve-vm-cpu",
+			Usage:  "Emulatd CPU",
+			Value:  "", // leave the flag default value blank to support the clone default behavior if not explicity set of 'use what is most appropriate'
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_VM_CPU_SOCKETS",
@@ -174,7 +208,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  "",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_CPU",
+			EnvVar: "PROXMOXVE_VM_CPU_CORES",
 			Name:   "proxmoxve-vm-cpu-cores",
 			Usage:  "number of cpu cores",
 			Value:  "",
@@ -210,9 +244,33 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  "", // leave the flag default value blank to support the clone default behavior if not explicity set of 'use what is most appropriate'
 		},
 		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_CIENABLED",
+			Name:   "proxmoxve-vm-cienabled",
+			Usage:  "cloud-init enabled (implied with clone strategy 0=false, 1=true, ''=default)",
+			Value:  "", // leave the flag default value blank to support the clone default behavior if not explicity set of 'use what is most appropriate'
+		},
+		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_VM_IMAGE_FILE",
 			Name:   "proxmoxve-vm-image-file",
 			Usage:  "storage of the image file (e.g. local:iso/rancheros-proxmoxve-autoformat.iso)",
+			Value:  "",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_NET_MODEL",
+			Name:   "proxmoxve-vm-net-model",
+			Usage:  "Net Interface model, default virtio (e1000, virtio, realtek, etc...)",
+			Value:  "virtio",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_NET_FIREWALL",
+			Name:   "proxmoxve-vm-net-firewall",
+			Usage:  "enable/disable firewall (0=false, 1=true, ''=default)",
+			Value:  "",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_NET_MTU",
+			Name:   "proxmoxve-vm-net-mtu",
+			Usage:  "set nic mtu (''=default)",
 			Value:  "",
 		},
 		mcnflag.StringFlag{
@@ -307,11 +365,18 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.Onboot = flags.String("proxmoxve-vm-start-onboot")
 	d.Protection = flags.String("proxmoxve-vm-protection")
 	d.Citype = flags.String("proxmoxve-vm-citype")
+	d.CiEnabled = flags.String("proxmoxve-vm-cienabled")
 	d.ImageFile = flags.String("proxmoxve-vm-image-file")
-	d.Sockets = flags.String("proxmoxve-vm-cpu-sockets")
-	d.Cores = flags.String("proxmoxve-vm-cpu-cores")
+	d.CPUSockets = flags.String("proxmoxve-vm-cpu-sockets")
+	d.CPU = flags.String("proxmoxve-vm-cpu")
+	d.CPUCores = flags.String("proxmoxve-vm-cpu-cores")
+	d.NetModel = flags.String("proxmoxve-vm-net-model")
+	d.NetFirewall = flags.String("proxmoxve-vm-net-firewall")
+	d.NetMtu = flags.String("proxmoxve-vm-net-mtu")
 	d.NetBridge = flags.String("proxmoxve-vm-net-bridge")
 	d.NetVlanTag = flags.Int("proxmoxve-vm-net-tag")
+	d.ScsiController = flags.String("proxmoxve-vm-scsi-controller")
+	d.ScsiAttributes = flags.String("proxmoxve-vm-scsi-attributes")
 
 	//SSH connection settings
 	d.GuestSSHPort = flags.Int("proxmoxve-ssh-port")
@@ -443,7 +508,7 @@ func (d *Driver) PreCreateCheck() error {
 			return err
 		}
 
-		filename := "vm-" + d.VMID + "-disk-1"
+		filename := "vm-" + d.VMID + "-disk-0"
 		switch storageType {
 		case "lvmthin":
 			fallthrough
@@ -504,20 +569,35 @@ func (d *Driver) Create() error {
 			VMID:       d.VMID,
 			Agent:      "1",
 			Autostart:  "1",
+			Onboot:     d.Onboot,
 			Memory:     d.Memory,
-			Sockets:    d.Sockets,
-			Cores:      d.Cores,
+			Sockets:    d.CPUSockets,
+			Cores:      d.CPUCores,
 			SCSI0:      d.StorageFilename,
 			Ostype:     "l26",
 			Name:       d.BaseDriver.MachineName,
 			KVM:        "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization
-			Scsihw:     "virtio-scsi-pci",
+			Scsihw:     d.ScsiController,
 			Cdrom:      d.ImageFile,
-			Ide3:       d.Storage + ":cloudinit",
-			Citype:     d.Citype,
 			Pool:       d.Pool,
-			Onboot:     d.Onboot,
 			Protection: d.Protection,
+		}
+
+		if d.CiEnabled == "1" {
+			npp.Citype = d.Citype
+			npp.Ide3 = d.Storage + ":cloudinit"
+		}
+
+		if len(d.ScsiAttributes) > 0 {
+			npp.SCSI0 += "," + d.ScsiAttributes
+		}
+
+		if len(d.NUMA) > 0 {
+			npp.NUMA = d.NUMA
+		}
+
+		if len(d.CPU) > 0 {
+			npp.CPU = d.CPU
 		}
 
 		npp.Net0, _ = d.generateNetString()
@@ -616,8 +696,8 @@ func (d *Driver) Create() error {
 			Agent:      "1",
 			Autostart:  "1",
 			Memory:     d.Memory,
-			Sockets:    d.Sockets,
-			Cores:      d.Cores,
+			Sockets:    d.CPUSockets,
+			Cores:      d.CPUCores,
 			KVM:        "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization,
 			Citype:     d.Citype,
 			Onboot:     d.Onboot,
@@ -626,6 +706,14 @@ func (d *Driver) Create() error {
 
 		if len(d.NetBridge) > 0 {
 			npp.Net0, _ = d.generateNetString()
+		}
+
+		if len(d.NUMA) > 0 {
+			npp.NUMA = d.NUMA
+		}
+
+		if len(d.CPU) > 0 {
+			npp.CPU = d.CPU
 		}
 
 		taskid, err = d.driver.NodesNodeQemuVMIDConfigPost(d.Node, d.VMID, &npp)
@@ -685,8 +773,11 @@ func (d *Driver) Create() error {
 
 	switch d.ProvisionStrategy {
 	case "cdrom":
-		return nil
-		//return d.waitAndPrepareSSH()
+		if len(d.GuestPassword) > 0 {
+			return d.waitAndPrepareSSH()
+		} else {
+			return nil
+		}
 	case "clone":
 		fallthrough
 	default:
@@ -695,9 +786,17 @@ func (d *Driver) Create() error {
 }
 
 func (d *Driver) generateNetString() (string, error) {
-	var net string = fmt.Sprintf("virtio,bridge=%s", d.NetBridge)
+	var net string = fmt.Sprintf("model=%s,bridge=%s", d.NetModel, d.NetBridge)
 	if d.NetVlanTag != 0 {
 		net = fmt.Sprintf(net+",tag=%d", d.NetVlanTag)
+	}
+
+	if len(d.NetFirewall) > 0 {
+		net = fmt.Sprintf(net+",firewall=%s", d.NetFirewall)
+	}
+
+	if len(d.NetMtu) > 0 {
+		net = fmt.Sprintf(net+",mtu=%s", d.NetMtu)
 	}
 
 	return net, nil

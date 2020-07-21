@@ -317,6 +317,8 @@ type NodesNodeQemuPostParameter struct {
 	Scsihw     string // SCSI controller model.
 	Onboot     string // Specifies whether a VM will be started during system bootup.
 	Protection string // Sets the protection flag of the VM. This will disable the remove VM and remove disk operations.
+	NUMA       string // Enable/disable NUMA
+	CPU        string // Emulated CPU type.
 }
 
 type nNodesNodeQemuPostParameter struct {
