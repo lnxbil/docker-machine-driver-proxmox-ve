@@ -299,19 +299,24 @@ func (p ProxmoxVE) ClusterNextIDGet(id int) (vmid string, err error) {
 // Original Description:
 // Create or restore a virtual machine.
 type NodesNodeQemuPostParameter struct {
-	VMID      string // The (unique) ID of the VM.
-	Memory    int    `json:"memory,omitempty"` // optional, Amount of RAM for the VM in MB. This is the maximum available memory when you use the balloon device.
-	Autostart string // optional, Automatic restart after crash (currently ignored).
-	Agent     string // optional, Enable/disable Qemu GuestAgent.
-	Net0      string
-	Name      string // optional, Set a name for the VM. Only used on the configuration web interface.
-	SCSI0     string // optional, Use volume as VIRTIO hard disk (n is 0 to 15).
-	Ostype    string // optional, Specify guest operating system.
-	KVM       string // optional, Enable/disable KVM hardware virtualization.
-	Pool      string // optional, Add the VM to the specified pool.
-	Sockets   string `json:"sockets,omitempty"` // optional, The number of cpus.
-	Cores     string `json:"cores,omitempty"`   // optional, The number of cores per socket.
-	Cdrom     string // optional, This is an alias for option -ide2
+	VMID       string // The (unique) ID of the VM.
+	Memory     int    `json:"memory,omitempty"` // optional, Amount of RAM for the VM in MB. This is the maximum available memory when you use the balloon device.
+	Autostart  string // optional, Automatic restart after crash (currently ignored).
+	Agent      string // optional, Enable/disable Qemu GuestAgent.
+	Net0       string
+	Name       string // optional, Set a name for the VM. Only used on the configuration web interface.
+	SCSI0      string // optional, Use volume as VIRTIO hard disk (n is 0 to 15).
+	Ostype     string // optional, Specify guest operating system.
+	KVM        string // optional, Enable/disable KVM hardware virtualization.
+	Pool       string // optional, Add the VM to the specified pool.
+	Sockets    string `json:"sockets,omitempty"` // optional, The number of cpus.
+	Cores      string `json:"cores,omitempty"`   // optional, The number of cores per socket.
+	Cdrom      string // optional, This is an alias for option -ide2
+	Ide3       string
+	Citype     string // Specifies the cloud-init configuration format.
+	Scsihw     string // SCSI controller model.
+	Onboot     string // Specifies whether a VM will be started during system bootup.
+	Protection string // Sets the protection flag of the VM. This will disable the remove VM and remove disk operations.
 }
 
 type nNodesNodeQemuPostParameter struct {
@@ -393,10 +398,13 @@ func (p ProxmoxVE) NodesNodeQemuPost(node string, input *NodesNodeQemuPostParame
 // Original Description:
 // Create a copy of virtual machine/template.
 type NodesNodeQemuVMIDClonePostParameter struct {
-	Newid string // VMID for the clone.
-	VMID  string // The (unique) ID of the VM.
-	Name  string // Set a name for the new VM.
-	Pool  string // Add the new VM to the specified pool.
+	Newid   string // VMID for the clone.
+	VMID    string // The (unique) ID of the VM.
+	Name    string // Set a name for the new VM.
+	Pool    string // Add the new VM to the specified pool.
+	Full    string // Create a full copy of all disks.
+	Storage string // Target storage for full clone.
+	Format  string // Target format for file storage. Only valid for full clone.
 }
 
 // NodesNodeQemuVMIDClonePost access the API
@@ -680,9 +688,19 @@ type ConfigReturn struct {
 func (p ProxmoxVE) GetConfig(node string, vmid string) (ConfigReturn, error) {
 	path := fmt.Sprintf("/nodes/%s/qemu/%s/config", node, vmid)
 
+	var a ConfigReturn
+
 	response, err := p.client.R().Get(p.getURL(path))
 
-	var a ConfigReturn
+	if err != nil {
+		return a, err
+	}
+	code := response.StatusCode()
+
+	if code < 200 || code > 300 {
+		return a, fmt.Errorf("status code was '%d' and error is\n%s", code, response.Status())
+	}
+
 	resp := response.String()
 	err = json.Unmarshal([]byte(resp), &a)
 

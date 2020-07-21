@@ -49,12 +49,16 @@ type Driver struct {
 	DiskSize        string // disk size in GB
 	Memory          int    // memory in GB
 	StorageFilename string
+	Onboot          string // Specifies whether a VM will be started during system bootup.
+	Protection      string // Sets the protection flag of the VM. This will disable the remove VM and remove disk operations.
+	Citype          string // Specifies the cloud-init configuration format.
 
 	NetBridge  string // bridge applied to network interface
 	NetVlanTag int    // vlan tag
 
 	VMID          string // VM ID only filled by create()
-	TemplateVMID  string // VM ID of the used template
+	CloneVMID     string // VM ID to clone
+	CloneFull     int    // Make a full (detached) clone from parent (defaults to true if VMID is not a template, otherwise false)
 	GuestUsername string // user to log into the guest OS to copy the public key
 	GuestPassword string // password to log into the guest OS to copy the public key
 	GuestSSHPort  int    // ssh port to log into the guest OS to copy the public key
@@ -112,8 +116,8 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_PROVISION_STRATEGY",
 			Name:   "proxmoxve-provision-strategy",
-			Usage:  "Provision strategy (new|clone)",
-			Value:  "new",
+			Usage:  "Provision strategy (cdrom|clone)",
+			Value:  "cdrom",
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_PROXMOX_USER_NAME",
@@ -143,7 +147,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			EnvVar: "PROXMOXVE_VM_STORAGE_PATH",
 			Name:   "proxmoxve-vm-storage-path",
 			Usage:  "storage to create the VM volume on",
-			Value:  "local",
+			Value:  "", // leave the flag default value blank to support the clone default behavior if not explicity set of 'use what is most appropriate'
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_VM_STORAGE_SIZE",
@@ -155,7 +159,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			EnvVar: "PROXMOXVE_VM_STORAGE_TYPE",
 			Name:   "proxmoxve-vm-storage-type",
 			Usage:  "storage type to use (QCOW2 or RAW)",
-			Value:  "raw",
+			Value:  "", // leave the flag default value blank to support the clone default behavior if not explicity set of 'use what is most appropriate'
 		},
 		mcnflag.IntFlag{
 			EnvVar: "PROXMOXVE_VM_MEMORY",
@@ -176,10 +180,34 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  "",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_TEMPLATE_VNID",
-			Name:   "proxmoxve-vm-template-vmid",
-			Usage:  "vmid of the template to clone",
+			EnvVar: "PROXMOXVE_VM_CLONE_VNID",
+			Name:   "proxmoxve-vm-clone-vmid",
+			Usage:  "vmid to clone",
 			Value:  "",
+		},
+		mcnflag.IntFlag{
+			EnvVar: "PROXMOXVE_VM_CLONE_FULL",
+			Name:   "proxmoxve-vm-clone-full",
+			Usage:  "make a full clone or not (0=false, 1=true, 2=use proxmox default logic",
+			Value:  2,
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_START_ONBOOT",
+			Name:   "proxmoxve-vm-start-onboot",
+			Usage:  "make the VM start automatically onboot (0=false, 1=true, ''=default)",
+			Value:  "", // leave the flag default value blank to support the clone default behavior if not explicity set of 'use what is most appropriate'
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_PROTECTION",
+			Name:   "proxmoxve-vm-protection",
+			Usage:  "protect the VM and disks from removal (0=false, 1=true, ''=default)",
+			Value:  "", // leave the flag default value blank to support the clone default behavior if not explicity set of 'use what is most appropriate'
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_CITYPE",
+			Name:   "proxmoxve-vm-citype",
+			Usage:  "cloud-init type (nocloud|configdrive2)",
+			Value:  "", // leave the flag default value blank to support the clone default behavior if not explicity set of 'use what is most appropriate'
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_VM_IMAGE_FILE",
@@ -191,7 +219,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			EnvVar: "PROXMOXVE_VM_NET_BRIDGE",
 			Name:   "proxmoxve-vm-net-bridge",
 			Usage:  "bridge to attach network to",
-			Value:  "vmbr0",
+			Value:  "", // leave the flag default value blank to support the clone default behavior if not explicity set of 'use what is most appropriate'
 		},
 		mcnflag.IntFlag{
 			EnvVar: "PROXMOXVE_VM_NET_TAG",
@@ -274,7 +302,11 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.StorageType = strings.ToLower(flags.String("proxmoxve-vm-storage-type"))
 	d.Memory = flags.Int("proxmoxve-vm-memory")
 	d.Memory *= 1024
-	d.TemplateVMID = flags.String("proxmoxve-vm-template-vmid")
+	d.CloneVMID = flags.String("proxmoxve-vm-clone-vmid")
+	d.CloneFull = flags.Int("proxmoxve-vm-clone-full")
+	d.Onboot = flags.String("proxmoxve-vm-start-onboot")
+	d.Protection = flags.String("proxmoxve-vm-protection")
+	d.Citype = flags.String("proxmoxve-vm-citype")
 	d.ImageFile = flags.String("proxmoxve-vm-image-file")
 	d.Sockets = flags.String("proxmoxve-vm-cpu-sockets")
 	d.Cores = flags.String("proxmoxve-vm-cpu-cores")
@@ -381,7 +413,22 @@ func (d *Driver) PreCreateCheck() error {
 	d.VMID = id
 
 	switch d.ProvisionStrategy {
-	case "new":
+	case "cdrom":
+		// set defaults for cdrom
+		// replicating pre-clone behavior of setting a default on the parameter
+		if len(d.Storage) < 1 {
+			d.Storage = "local"
+		}
+
+		if len(d.StorageType) < 1 {
+			d.StorageType = "raw"
+		}
+
+		if len(d.NetBridge) < 1 {
+			d.NetBridge = "vmbr0"
+		}
+
+		// prepare StorageFilename
 		switch d.StorageType {
 		case "raw":
 			fallthrough
@@ -435,7 +482,7 @@ func (d *Driver) PreCreateCheck() error {
 func (d *Driver) Create() error {
 
 	switch d.ProvisionStrategy {
-	case "new":
+	case "cdrom":
 
 		volume := NodesNodeStorageStorageContentPostParameter{
 			Filename: d.StorageFilename,
@@ -454,24 +501,26 @@ func (d *Driver) Create() error {
 		}
 
 		npp := NodesNodeQemuPostParameter{
-			VMID:      d.VMID,
-			Agent:     "1",
-			Autostart: "1",
-			Memory:    d.Memory,
-			Sockets:   d.Sockets,
-			Cores:     d.Cores,
-			Net0:      "virtio,bridge=vmbr0",
-			SCSI0:     d.StorageFilename,
-			Ostype:    "l26",
-			Name:      d.BaseDriver.MachineName,
-			KVM:       "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization
-			Cdrom:     d.ImageFile,
-			Pool:      d.Pool,
+			VMID:       d.VMID,
+			Agent:      "1",
+			Autostart:  "1",
+			Memory:     d.Memory,
+			Sockets:    d.Sockets,
+			Cores:      d.Cores,
+			SCSI0:      d.StorageFilename,
+			Ostype:     "l26",
+			Name:       d.BaseDriver.MachineName,
+			KVM:        "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization
+			Scsihw:     "virtio-scsi-pci",
+			Cdrom:      d.ImageFile,
+			Ide3:       d.Storage + ":cloudinit",
+			Citype:     d.Citype,
+			Pool:       d.Pool,
+			Onboot:     d.Onboot,
+			Protection: d.Protection,
 		}
 
-		if d.NetVlanTag != 0 {
-			npp.Net0 = fmt.Sprintf("virtio,bridge=%s,tag=%d", d.NetBridge, d.NetVlanTag)
-		}
+		npp.Net0, _ = d.generateNetString()
 
 		if d.StorageType == "qcow2" {
 			npp.SCSI0 = d.Storage + ":" + d.VMID + "/" + volume.Filename
@@ -493,17 +542,53 @@ func (d *Driver) Create() error {
 		if err != nil {
 			return err
 		}
+
+		var pub string
+		keyfile := d.GetSSHKeyPath()
+		pub, _, err = GetKeyPair(keyfile)
+		if err != nil {
+			return err
+		}
+
+		// specially handle setting sshkeys
+		// https://forum.proxmox.com/threads/how-to-use-pvesh-set-vms-sshkeys.52570/
+		taskid, err = d.driver.NodesNodeQemuVMIDConfigSetSSHKeys(d.Node, d.VMID, pub)
+		if err != nil {
+			return err
+		}
+
+		err = d.driver.WaitForTaskToComplete(d.Node, taskid)
+		if err != nil {
+			return err
+		}
 		break
 	case "clone":
 
+		// clone
 		clone := NodesNodeQemuVMIDClonePostParameter{
 			Newid: d.VMID,
 			Name:  d.BaseDriver.MachineName,
 			Pool:  d.Pool,
 		}
-		d.debugf("cloning template id '%s' as vmid '%s'", d.TemplateVMID, clone.Newid)
 
-		taskid, err := d.driver.NodesNodeQemuVMIDClonePost(d.Node, d.TemplateVMID, &clone)
+		switch d.CloneFull {
+		case 0:
+			clone.Full = "0"
+			break
+		case 1:
+			clone.Full = "1"
+			clone.Format = d.StorageType
+			clone.Storage = d.Storage
+			break
+		case 2:
+			clone.Format = d.StorageType
+			clone.Storage = d.Storage
+			break
+		}
+
+		d.debugf("cloning template id '%s' as vmid '%s'", d.CloneVMID, clone.Newid)
+
+		taskid, err := d.driver.NodesNodeQemuVMIDClonePost(d.Node, d.CloneVMID, &clone)
 		if err != nil {
 			return err
 		}
@@ -528,22 +613,29 @@ func (d *Driver) Create() error {
 		// set config values
 		d.debugf("setting cloud-init sshkeys for vmid '%s'", d.VMID)
 		npp := NodesNodeQemuPostParameter{
-			Agent:     "1",
-			Autostart: "1",
-			Memory:    d.Memory,
-			Sockets:   d.Sockets,
-			Cores:     d.Cores,
-			KVM:       "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization,
-
+			Agent:      "1",
+			Autostart:  "1",
+			Memory:     d.Memory,
+			Sockets:    d.Sockets,
+			Cores:      d.Cores,
+			KVM:        "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization,
+			Citype:     d.Citype,
+			Onboot:     d.Onboot,
+			Protection: d.Protection,
 		}
+
+		if len(d.NetBridge) > 0 {
+			npp.Net0, _ = d.generateNetString()
+		}
+
 		taskid, err = d.driver.NodesNodeQemuVMIDConfigPost(d.Node, d.VMID, &npp)
 		if err != nil {
 			return err
 		}
 
-		// get sshkeys
+		// append newly minted ssh key to existing (if any)
 		d.debugf("retrieving existing cloud-init sshkeys from vmid '%s'", d.VMID)
-		config, err := d.driver.GetConfig(d.Node, d.TemplateVMID)
+		config, err := d.driver.GetConfig(d.Node, d.CloneVMID)
 		if err != nil {
 			return err
 		}
@@ -592,13 +684,23 @@ func (d *Driver) Create() error {
 	}
 
 	switch d.ProvisionStrategy {
-	case "new":
-		return d.waitAndPrepareSSH()
+	case "cdrom":
+		return nil
+		//return d.waitAndPrepareSSH()
 	case "clone":
 		fallthrough
 	default:
 		return nil
 	}
+}
+
+func (d *Driver) generateNetString() (string, error) {
+	var net string = fmt.Sprintf("virtio,bridge=%s", d.NetBridge)
+	if d.NetVlanTag != 0 {
+		net = fmt.Sprintf(net+",tag=%d", d.NetVlanTag)
+	}
+
+	return net, nil
 }
 
 func (d *Driver) waitAndPrepareSSH() error {
