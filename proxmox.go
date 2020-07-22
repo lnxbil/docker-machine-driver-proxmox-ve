@@ -681,6 +681,7 @@ type ConfigReturn struct {
 		CPU     string  `json:"cpu"`
 		ONBoot  IntBool `json:"onboot"`
 		SSHKeys string  `json:"sshkeys"`
+		Smbios1 string  // optional, Specify SMBIOS type 1 fields.
 	} `json:"data"`
 }
 

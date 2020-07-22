@@ -12,6 +12,7 @@ import (
 	mrand "math/rand"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -70,6 +71,7 @@ type Driver struct {
 
 	VMID          string // VM ID only filled by create()
 	VMIDRange     string // acceptable range of VMIDs
+	VMUUID        string // UUID to confirm
 	CloneVMID     string // VM ID to clone
 	CloneFull     int    // Make a full (detached) clone from parent (defaults to true if VMID is not a template, otherwise false)
 	GuestUsername string // user to log into the guest OS to copy the public key
@@ -483,6 +485,17 @@ func (d *Driver) GetState() (state.State, error) {
 		return state.Error, err
 	}
 
+	// sanity check the UUID
+	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	if err != nil {
+		return state.Error, err
+	}
+
+	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
+	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
+		return state.Error, fmt.Errorf("UUID mismatch - %s (stored) vs %s (current)", d.VMUUID, cVMMUUID)
+	}
+
 	//Starting
 	//Running
 	//Stopped
@@ -606,9 +619,9 @@ func (d *Driver) Create() error {
 	// add some random wait time here to help with race conditions in the proxmox api
 	// the app could be getting invoked several times in rapid succession so some small waits may be helpful
 	mrand.Seed(time.Now().UnixNano()) // Seed the random number generator using the current time (nanoseconds since epoch)
-	r := mrand.Intn(5)
-	d.debugf("sleeping %d seconds before retrieving next ID", r)
-	time.Sleep(time.Duration(r) * time.Second)
+	r := mrand.Intn(5000)
+	d.debugf("sleeping %d milliseconds before retrieving next ID", r)
+	time.Sleep(time.Duration(r) * time.Millisecond)
 
 	// get next available VMID
 	// NOTE: we want to lock in the ID as quickly as possible after retrieving (ie: invoke QemuPost or Clone ASAP to avoid race conditions with other instances)
@@ -864,6 +877,14 @@ func (d *Driver) Create() error {
 		return fmt.Errorf("invalid provision strategy '%s'", d.ProvisionStrategy)
 	}
 
+	// Set the newly minted UUID
+	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	if err != nil {
+		return err
+	}
+	d.VMUUID = getUUIDFromSmbios1(config.Data.Smbios1)
+	d.debugf("VM created with uuid '%s'", d.VMUUID)
+
 	// start the VM
 	err = d.Start()
 	if err != nil {
@@ -1021,8 +1042,19 @@ func (d *Driver) Start() error {
 	if err != nil {
 		return err
 	}
-	taskid, err := d.driver.NodesNodeQemuVMIDStatusStartPost(d.Node, d.VMID)
 
+	// sanity check the UUID
+	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	if err != nil {
+		return err
+	}
+
+	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
+	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
+		return fmt.Errorf("UUID mismatch - %s (stored) vs %s (current)", d.VMUUID, cVMMUUID)
+	}
+
+	taskid, err := d.driver.NodesNodeQemuVMIDStatusStartPost(d.Node, d.VMID)
 	if err != nil {
 		return err
 	}
@@ -1042,8 +1074,20 @@ func (d *Driver) Stop() error {
 	if err != nil {
 		return err
 	}
-	taskid, err := d.driver.NodesNodeQemuVMIDStatusShutdownPost(d.Node, d.VMID)
 
+	// sanity check the UUID
+	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	if err != nil {
+		return err
+	}
+
+	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
+	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
+		return fmt.Errorf("UUID mismatch - %s (stored) vs %s (current)", d.VMUUID, cVMMUUID)
+	}
+
+	// shutdown
+	taskid, err := d.driver.NodesNodeQemuVMIDStatusShutdownPost(d.Node, d.VMID)
 	if err != nil {
 		return err
 	}
@@ -1063,8 +1107,20 @@ func (d *Driver) Restart() error {
 	if err != nil {
 		return err
 	}
-	taskid, err := d.driver.NodesNodeQemuVMIDStatusRebootPost(d.Node, d.VMID)
 
+	// sanity check the UUID
+	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	if err != nil {
+		return err
+	}
+
+	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
+	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
+		return fmt.Errorf("UUID mismatch - %s (stored) vs %s (current)", d.VMUUID, cVMMUUID)
+	}
+
+	// reboot
+	taskid, err := d.driver.NodesNodeQemuVMIDStatusRebootPost(d.Node, d.VMID)
 	if err != nil {
 		return err
 	}
@@ -1085,6 +1141,18 @@ func (d *Driver) Kill() error {
 		return err
 	}
 
+	// sanity check the UUID
+	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	if err != nil {
+		return err
+	}
+
+	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
+	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
+		return fmt.Errorf("UUID mismatch - %s (stored) vs %s (current)", d.VMUUID, cVMMUUID)
+	}
+
+	// stop
 	taskid, err := d.driver.NodesNodeQemuVMIDStatusStopPost(d.Node, d.VMID)
 	if err != nil {
 		return err
@@ -1104,6 +1172,17 @@ func (d *Driver) Remove() error {
 	err := d.connectAPI()
 	if err != nil {
 		return err
+	}
+
+	// sanity check the UUID
+	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	if err != nil {
+		return err
+	}
+
+	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
+	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
+		return nil
 	}
 
 	// force shut down VM before invoking delete
@@ -1203,4 +1282,9 @@ func GenKeyPair() (string, string, error) {
 
 	public := ssh.MarshalAuthorizedKey(pub)
 	return string(public), private.String(), nil
+}
+
+func getUUIDFromSmbios1(str string) string {
+	var re = regexp.MustCompile(`(?m)uuid=([\d\w-]{1,})[,]{0,1}.*$`)
+	return re.FindStringSubmatch(fmt.Sprintf("%s", str))[1]
 }
