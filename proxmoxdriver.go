@@ -6,11 +6,13 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io/ioutil"
+	mrand "math/rand"
 	"net/url"
 	"os"
-	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/mcnflag"
+	mssh "github.com/docker/machine/libmachine/ssh"
 	"github.com/docker/machine/libmachine/state"
 	"github.com/labstack/gommon/log"
 )
@@ -66,6 +69,7 @@ type Driver struct {
 	ScsiAttributes string
 
 	VMID          string // VM ID only filled by create()
+	VMIDRange     string // acceptable range of VMIDs
 	CloneVMID     string // VM ID to clone
 	CloneFull     int    // Make a full (detached) clone from parent (defaults to true if VMID is not a template, otherwise false)
 	GuestUsername string // user to log into the guest OS to copy the public key
@@ -151,6 +155,12 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			EnvVar: "PROXMOXVE_PROXMOX_POOL",
 			Name:   "proxmoxve-proxmox-pool",
 			Usage:  "pool to attach to",
+			Value:  "",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "PROXMOXVE_VM_VMID_RANGE",
+			Name:   "proxmoxve-vm-vmid-range",
+			Usage:  "range of acceptable vmid values <low>[:<high>]",
 			Value:  "",
 		},
 		mcnflag.StringFlag{
@@ -289,13 +299,13 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			EnvVar: "PROXMOXVE_SSH_USERNAME",
 			Name:   "proxmoxve-ssh-username",
 			Usage:  "Username to log in to the guest OS (default docker for rancheros)",
-			Value:  "docker",
+			Value:  "",
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_SSH_PASSWORD",
 			Name:   "proxmoxve-ssh-password",
 			Usage:  "Password to log in to the guest OS (default tcuser for rancheros)",
-			Value:  "tcuser",
+			Value:  "",
 		},
 		mcnflag.IntFlag{
 			EnvVar: "PROXMOXVE_SSH_PORT",
@@ -360,6 +370,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.StorageType = strings.ToLower(flags.String("proxmoxve-vm-storage-type"))
 	d.Memory = flags.Int("proxmoxve-vm-memory")
 	d.Memory *= 1024
+	d.VMIDRange = flags.String("proxmoxve-vm-vmid-range")
 	d.CloneVMID = flags.String("proxmoxve-vm-clone-vmid")
 	d.CloneFull = flags.Int("proxmoxve-vm-clone-full")
 	d.Onboot = flags.String("proxmoxve-vm-start-onboot")
@@ -430,7 +441,20 @@ func (d *Driver) GetNetVlanTag() int {
 // GetIP returns the ip
 func (d *Driver) GetIP() (string, error) {
 	d.connectAPI()
-	return d.driver.GetEth0IPv4(d.Node, d.VMID)
+
+	ip, err := d.driver.GetEth0IPv4(d.Node, d.VMID)
+	if err != nil {
+		// TODO: should we return the cached IP here?
+		return ip, err
+	}
+
+	// set/update IP if success
+	if d.IPAddress != ip {
+		d.debugf("driver IP is set as '%s'", ip)
+		d.IPAddress = ip
+	}
+
+	return ip, err
 }
 
 // GetSSHHostname returns the ssh host returned by the API
@@ -450,15 +474,46 @@ func (d *Driver) GetSSHUsername() string {
 
 // GetState returns the state of the VM
 func (d *Driver) GetState() (state.State, error) {
-	err := d.connectAPI()
-	if err != nil {
-		return state.Paused, err
+	if len(d.VMID) < 1 {
+		return state.Error, errors.New("invalid VMID")
 	}
 
-	if d.ping() {
+	err := d.connectAPI()
+	if err != nil {
+		return state.Error, err
+	}
+
+	//Starting
+	//Running
+	//Stopped
+	//Paused
+	//Error
+
+	ip, err := d.GetIP()
+
+	// only consider fully running when IP is available
+	if err == nil && len(ip) > 0 {
 		return state.Running, nil
 	}
-	return state.Stopped, nil
+
+	// starting if qemu-guest-agent is available but no IP
+	if d.ping() {
+		return state.Starting, nil
+	}
+
+	pveState, err := d.driver.NodesNodeQemuVMIDStatusCurrentGet(d.Node, d.VMID)
+	if err != nil {
+		return state.Error, err
+	}
+
+	switch pveState {
+	case "stopped":
+		return state.Stopped, nil
+	case "running":
+		return state.Starting, nil
+	}
+
+	return state.Error, fmt.Errorf("unkown error detecting VM state")
 }
 
 // PreCreateCheck is called to enforce pre-creation steps
@@ -468,14 +523,6 @@ func (d *Driver) PreCreateCheck() error {
 	if err != nil {
 		return err
 	}
-
-	d.debug("Retrieving next ID")
-	id, err := d.driver.ClusterNextIDGet(0)
-	if err != nil {
-		return err
-	}
-	d.debugf("Next ID was '%s'", id)
-	d.VMID = id
 
 	switch d.ProvisionStrategy {
 	case "cdrom":
@@ -491,6 +538,14 @@ func (d *Driver) PreCreateCheck() error {
 
 		if len(d.NetBridge) < 1 {
 			d.NetBridge = "vmbr0"
+		}
+
+		if len(d.GuestUsername) < 1 {
+			d.GuestUsername = "docker"
+		}
+
+		if len(d.GuestPassword) < 1 {
+			d.GuestPassword = "tcuser"
 		}
 
 		// prepare StorageFilename
@@ -530,21 +585,75 @@ func (d *Driver) PreCreateCheck() error {
 		return fmt.Errorf("invalid provision strategy '%s'", d.ProvisionStrategy)
 	}
 
-	// create and save a new SSH key pair
-	keyfile := d.GetSSHKeyPath()
-	keypath := path.Dir(keyfile)
-	d.debugf("Generating new key pair at path '%s'", keypath)
-	err = os.MkdirAll(keypath, 0755)
-	if err != nil {
-		return err
-	}
-	_, _, err = GetKeyPair(keyfile)
-
-	return err
+	return nil
 }
 
 // Create creates a new VM with storage
 func (d *Driver) Create() error {
+
+	// create and save a new SSH key pair
+	d.debug("creating new ssh keypair")
+	key, err := d.createSSHKey()
+	if err != nil {
+		return err
+	}
+
+	// !! Workaround for MC-7982.
+	key = strings.TrimSpace(key)
+	key = fmt.Sprintf("%s %s-%d", key, d.MachineName, time.Now().Unix())
+	// !! End workaround for MC-7982.
+
+	// add some random wait time here to help with race conditions in the proxmox api
+	// the app could be getting invoked several times in rapid succession so some small waits may be helpful
+	mrand.Seed(time.Now().UnixNano()) // Seed the random number generator using the current time (nanoseconds since epoch)
+	r := mrand.Intn(5)
+	d.debugf("sleeping %d seconds before retrieving next ID", r)
+	time.Sleep(time.Duration(r) * time.Second)
+
+	// get next available VMID
+	// NOTE: we want to lock in the ID as quickly as possible after retrieving (ie: invoke QemuPost or Clone ASAP to avoid race conditions with other instances)
+	d.debug("Retrieving next ID")
+
+	var id string
+	if len(d.VMIDRange) > 0 {
+		VMIDParts := strings.Split(d.VMIDRange, ":")
+		low, err := strconv.Atoi(VMIDParts[0])
+		if err != nil {
+			return err
+		}
+
+		var high = 0
+		if len(VMIDParts) > 1 {
+			high, err = strconv.Atoi(VMIDParts[1])
+			if err != nil {
+				return err
+			}
+		}
+
+		d.debugf("Looking for available VMID in range '%d:%d'", low, high)
+
+		var i = low
+		for len(id) < 1 {
+			id, err = d.driver.ClusterNextIDGet(i)
+			if err != nil && high > 0 && i > high {
+				return err
+			}
+
+			if high > 0 && i >= high {
+				return fmt.Errorf("no VMIDs available in range '%d:%d'", low, high)
+			}
+
+			i++
+		}
+	} else {
+		id, err = d.driver.ClusterNextIDGet(0)
+		if err != nil {
+			return err
+		}
+	}
+
+	d.debugf("Next ID is '%s'", id)
+	d.VMID = id
 
 	switch d.ProvisionStrategy {
 	case "cdrom":
@@ -623,24 +732,20 @@ func (d *Driver) Create() error {
 			return err
 		}
 
-		var pub string
-		keyfile := d.GetSSHKeyPath()
-		pub, _, err = GetKeyPair(keyfile)
-		if err != nil {
-			return err
+		if d.CiEnabled == "1" {
+			// specially handle setting sshkeys
+			// https://forum.proxmox.com/threads/how-to-use-pvesh-set-vms-sshkeys.52570/
+			taskid, err = d.driver.NodesNodeQemuVMIDConfigSetSSHKeys(d.Node, d.VMID, key)
+			if err != nil {
+				return err
+			}
+
+			err = d.driver.WaitForTaskToComplete(d.Node, taskid)
+			if err != nil {
+				return err
+			}
 		}
 
-		// specially handle setting sshkeys
-		// https://forum.proxmox.com/threads/how-to-use-pvesh-set-vms-sshkeys.52570/
-		taskid, err = d.driver.NodesNodeQemuVMIDConfigSetSSHKeys(d.Node, d.VMID, pub)
-		if err != nil {
-			return err
-		}
-
-		err = d.driver.WaitForTaskToComplete(d.Node, taskid)
-		if err != nil {
-			return err
-		}
 		break
 	case "clone":
 
@@ -691,7 +796,7 @@ func (d *Driver) Create() error {
 		}
 
 		// set config values
-		d.debugf("setting cloud-init sshkeys for vmid '%s'", d.VMID)
+		d.debugf("setting VM config values for vmid '%s'", d.VMID)
 		npp := NodesNodeQemuPostParameter{
 			Agent:      "1",
 			Autostart:  "1",
@@ -740,14 +845,7 @@ func (d *Driver) Create() error {
 			SSHKeys += "\n"
 		}
 
-		var pub string
-		keyfile := d.GetSSHKeyPath()
-		pub, _, err = GetKeyPair(keyfile)
-		if err != nil {
-			return err
-		}
-
-		SSHKeys += pub
+		SSHKeys += key
 		SSHKeys = strings.TrimSpace(SSHKeys)
 
 		// specially handle setting sshkeys
@@ -766,23 +864,81 @@ func (d *Driver) Create() error {
 		return fmt.Errorf("invalid provision strategy '%s'", d.ProvisionStrategy)
 	}
 
-	err := d.Start()
+	// start the VM
+	err = d.Start()
 	if err != nil {
 		return err
+	}
+
+	// let VM start a settle a little
+	d.debugf("waiting for VM to start, wait 10 seconds")
+	time.Sleep(10 * time.Second)
+
+	// wait for qemu-guest-agent
+	err = d.waitForQemuGuestAgent()
+	if err != nil {
+		return err
+	}
+
+	// wait for network to come up
+	err = d.waitForNetwork()
+
+	// set the IPAddress
+	_, err = d.GetIP()
+	if err != nil {
+		return err
+
 	}
 
 	switch d.ProvisionStrategy {
 	case "cdrom":
 		if len(d.GuestPassword) > 0 {
-			return d.waitAndPrepareSSH()
-		} else {
-			return nil
+			return d.prepareSSHWithPassword()
 		}
+		return nil
 	case "clone":
 		fallthrough
 	default:
 		return nil
 	}
+}
+
+func (d *Driver) waitForQemuGuestAgent() error {
+	d.debugf("waiting for VM qemu-guest-agent to start")
+	d.connectAPI()
+	for !d.ping() {
+		d.debugf("waiting for VM qemu-guest-agent to start")
+		time.Sleep(5 * time.Second)
+	}
+
+	return nil
+}
+
+func (d *Driver) waitForNetwork() error {
+	d.debugf("waiting for VM network to start")
+	d.connectAPI()
+
+	var up = false
+	var ip string
+	var err error
+
+	for !up {
+		ip, err = d.driver.GetEth0IPv4(d.Node, d.VMID)
+		if err != nil {
+			d.debugf("waiting for VM network to start")
+			time.Sleep(5 * time.Second)
+		} else {
+			if len(ip) > 0 {
+				up = true
+				d.debugf("VM network started with ip: %s", ip)
+			} else {
+				d.debugf("waiting for VM network to start")
+				time.Sleep(5 * time.Second)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (d *Driver) generateNetString() (string, error) {
@@ -802,17 +958,7 @@ func (d *Driver) generateNetString() (string, error) {
 	return net, nil
 }
 
-func (d *Driver) waitAndPrepareSSH() error {
-	d.debugf("waiting for VM to become active, first wait 10 seconds")
-	time.Sleep(10 * time.Second)
-
-	for !d.ping() {
-		d.debugf("waiting for VM to become active")
-		time.Sleep(2 * time.Second)
-	}
-	d.debugf("VM is active waiting more")
-	time.Sleep(2 * time.Second)
-
+func (d *Driver) prepareSSHWithPassword() error {
 	sshConfig := &ssh.ClientConfig{
 		User: d.GetSSHUsername(),
 		Auth: []ssh.AuthMethod{
@@ -834,13 +980,7 @@ func (d *Driver) waitAndPrepareSSH() error {
 	if err != nil {
 		return err
 	}
-	ip, err := d.GetIP()
-	if err != nil {
-		return err
 
-	}
-	d.IPAddress = ip
-	d.debugf("driver IP is set as '%s'", d.IPAddress)
 	var stdoutBuf bytes.Buffer
 	session.Stdout = &stdoutBuf
 	session.Run("mkdir -p " + sshbasedir)
@@ -873,6 +1013,10 @@ func (d *Driver) waitAndPrepareSSH() error {
 
 // Start starts the VM
 func (d *Driver) Start() error {
+	if len(d.VMID) < 1 {
+		return errors.New("invalid VMID")
+	}
+
 	err := d.connectAPI()
 	if err != nil {
 		return err
@@ -890,6 +1034,10 @@ func (d *Driver) Start() error {
 
 // Stop stopps the VM
 func (d *Driver) Stop() error {
+	if len(d.VMID) < 1 {
+		return errors.New("invalid VMID")
+	}
+
 	err := d.connectAPI()
 	if err != nil {
 		return err
@@ -907,6 +1055,10 @@ func (d *Driver) Stop() error {
 
 // Restart restarts the VM
 func (d *Driver) Restart() error {
+	if len(d.VMID) < 1 {
+		return errors.New("invalid VMID")
+	}
+
 	err := d.connectAPI()
 	if err != nil {
 		return err
@@ -924,12 +1076,16 @@ func (d *Driver) Restart() error {
 
 // Kill the VM immediately
 func (d *Driver) Kill() error {
+	if len(d.VMID) < 1 {
+		return errors.New("invalid VMID")
+	}
+
 	err := d.connectAPI()
 	if err != nil {
 		return err
 	}
-	taskid, err := d.driver.NodesNodeQemuVMIDStatusStopPost(d.Node, d.VMID)
 
+	taskid, err := d.driver.NodesNodeQemuVMIDStatusStopPost(d.Node, d.VMID)
 	if err != nil {
 		return err
 	}
@@ -941,12 +1097,22 @@ func (d *Driver) Kill() error {
 
 // Remove removes the VM
 func (d *Driver) Remove() error {
+	if len(d.VMID) < 1 {
+		return nil
+	}
+
 	err := d.connectAPI()
 	if err != nil {
 		return err
 	}
-	taskid, err := d.driver.NodesNodeQemuVMIDDelete(d.Node, d.VMID)
 
+	// force shut down VM before invoking delete
+	err = d.Kill()
+	if err != nil {
+		return err
+	}
+
+	taskid, err := d.driver.NodesNodeQemuVMIDDelete(d.Node, d.VMID)
 	if err != nil {
 		return err
 	}
@@ -969,6 +1135,18 @@ func NewDriver(hostName, storePath string) drivers.Driver {
 			StorePath:   storePath,
 		},
 	}
+}
+
+func (d *Driver) createSSHKey() (string, error) {
+	sshKeyPath := d.ResolveStorePath("id_rsa")
+	if err := mssh.GenerateSSHKey(sshKeyPath); err != nil {
+		return "", err
+	}
+	key, err := ioutil.ReadFile(sshKeyPath + ".pub")
+	if err != nil {
+		return "", err
+	}
+	return string(key), nil
 }
 
 // GetKeyPair returns a public/private key pair and an optional error

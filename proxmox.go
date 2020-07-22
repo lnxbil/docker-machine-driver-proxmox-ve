@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/machine/libmachine/state"
 	"github.com/labstack/gommon/log"
 	resty "gopkg.in/resty.v1"
 )
@@ -287,10 +286,16 @@ func (p ProxmoxVE) NodesNodeStorageStorageContentPost(node string, storage strin
 // ClusterNextIDGet Get next free VMID. If you pass an VMID it will raise an error if the ID is already used.
 func (p ProxmoxVE) ClusterNextIDGet(id int) (vmid string, err error) {
 	path := "/cluster/nextid"
+
 	if id == 0 {
 		err = p.get(nil, &vmid, path)
 	} else {
-		err = p.get(id, &vmid, path)
+		input := struct {
+			VMID int
+		}{
+			VMID: id,
+		}
+		err = p.get(&input, &vmid, path)
 	}
 	return vmid, err
 }
@@ -629,34 +634,27 @@ func (p ProxmoxVE) GetEth0IPv4(node string, vmid string) (string, error) {
 
 // NodesNodeQemuVMIDStatusCurrentGet access the API
 // Get virtual machine status.
-func (p ProxmoxVE) NodesNodeQemuVMIDStatusCurrentGet(node string, vmid string) (state.State, error) {
+func (p ProxmoxVE) NodesNodeQemuVMIDStatusCurrentGet(node string, vmid string) (string, error) {
 	path := fmt.Sprintf("/nodes/%s/qemu/%s/status/current", node, vmid)
 	response, err := p.client.R().Get(p.getURL(path))
 	var f map[string]interface{}
 
 	err = json.Unmarshal([]byte(response.String()), &f)
 	if err != nil {
-		return state.Paused, err
+		return "", err
 	}
 
 	zz, err := json.Marshal(f["data"])
 	if err != nil {
-		return state.Paused, err
+		return "", err
 	}
 
 	err = json.Unmarshal(zz, &f)
 	if err != nil {
-		return state.Paused, err
+		return "", err
 	}
 
-	switch f["status"] {
-	case "running":
-		return state.Running, nil
-	case "stopped":
-		return state.Stopped, nil
-	}
-
-	return state.Error, nil
+	return f["status"].(string), nil
 }
 
 // IntBool represents a bool value as seen by the PERL API
