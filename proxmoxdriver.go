@@ -576,7 +576,7 @@ func (d *Driver) PreCreateCheck() error {
 			return err
 		}
 
-		filename := "vm-" + d.VMID + "-disk-0"
+		filename := "-disk-0"
 		switch storageType {
 		case "lvmthin":
 			fallthrough
@@ -591,6 +591,7 @@ func (d *Driver) PreCreateCheck() error {
 		case "dir":
 			filename += "." + d.StorageType
 		}
+		// this is not the finale filename, it'll be constructed in Create()
 		d.StorageFilename = filename
 	case "clone":
 		break
@@ -671,8 +672,10 @@ func (d *Driver) Create() error {
 	switch d.ProvisionStrategy {
 	case "cdrom":
 
+		completeFilename := "vm-" + d.VMID + d.StorageFilename
+
 		volume := NodesNodeStorageStorageContentPostParameter{
-			Filename: d.StorageFilename,
+			Filename: completeFilename,
 			Size:     d.DiskSize + "G",
 			VMID:     d.VMID,
 		}
