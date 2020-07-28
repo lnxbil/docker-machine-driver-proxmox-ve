@@ -672,10 +672,11 @@ func (d *Driver) Create() error {
 	switch d.ProvisionStrategy {
 	case "cdrom":
 
-		completeFilename := "vm-" + d.VMID + d.StorageFilename
+		// prefixing StorageFilename with VMID
+		d.StorageFilename = "vm-" + d.VMID + d.StorageFilename
 
 		volume := NodesNodeStorageStorageContentPostParameter{
-			Filename: completeFilename,
+			Filename: d.StorageFilename,
 			Size:     d.DiskSize + "G",
 			VMID:     d.VMID,
 		}
