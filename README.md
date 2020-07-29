@@ -279,20 +279,20 @@ At the first run, it is advisable to not comment out the `debug` flags. If every
 
 ### Version 4
 
-* support for using clones+cloud-init (@travisghansen)
-* enable custom network bridge without vlan tag (@guyguy333)
-* including args to choice scsi model (@bemanuel)
-* fix remove error, add further flags (@Psayker)
+* [support for using clones+cloud-init](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/pull/34) (Thanks to @travisghansen)
+* [enable custom network bridge without vlan tag](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/pull/30) (Thanks to @guyguy333)
+* [including args to choice scsi model](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/pull/28) (Thanks to @bemanuel)
+* [fix remove error, add further flags](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/pull/26) (Thanks to @Psayker)
 
 ### Version 3
 
-* Renaming driver from `proxmox-ve` to `proxmoxve` due to identification problem with RancherOS's K8S implementation (Thanks to [`@Sellto` for reporting #16](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/issues/16))
+* [Renaming driver from `proxmox-ve` to `proxmoxve` due to identification problem with RancherOS's K8S implementation](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/pull/18) (Thanks to [`@Sellto` for reporting #16](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/issues/16))
 * fixing issue with created disk detection (Thanks to [`@Sellto` for reporting #16](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/issues/16))
-* Add `IPAddress` property needed by rancher to know the ip address of the created VM. (`@Sellto`)
-* Change the name of each flag for better display in the rancher `Node Templates` (`@Sellto`)
-* Add number of `CPU cores configuration paramater`. (`@Sellto`)
-* LVM-thin fixes (`@vstconsulting`)
-* Bridge and VLAN tag support (`@bemanuel`)
+* [Add `IPAddress` property needed by rancher to know the ip address of the created VM](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/pull/18) (Thanks to `@Sellto`)
+* [Change the name of each flag for better display in the rancher `Node Templates`](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/pull/18) (Thanks to `@Sellto`)
+* [Add number of `CPU cores configuration paramater`](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/pull/18) (Thanks to `@Sellto`)
+* [LVM-thin fixes](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/pull/24) (Thanks to `@vstconsulting`)
+* [Bridge and VLAN tag support](https://github.com/lnxbil/docker-machine-driver-proxmox-ve/pull/22) (Thanks to `@bemanuel`)
 * Fixing filename detection including NFS support
 
 ### Version 2
