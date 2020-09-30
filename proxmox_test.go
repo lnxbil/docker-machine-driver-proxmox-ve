@@ -22,16 +22,16 @@ func TestSuccessfulConnection(t *testing.T) {
 	}
 }
 func TestWrongPass(t *testing.T) {
-	username, _, realm, host := GetProxmoxAccess()
-	_, err := dockermachinedriverproxmoxve.GetProxmoxVEConnectionByValues(username, "wrong_password", realm, host)
+	username, _, realm, host, port := GetProxmoxAccess()
+	_, err := dockermachinedriverproxmoxve.GetProxmoxVEConnectionByValues(username, "wrong_password", realm, host, port)
 	if err == nil {
 		t.Log(err)
 		t.Error()
 	}
 }
 func TestWrongUser(t *testing.T) {
-	_, password, realm, host := GetProxmoxAccess()
-	_, err := dockermachinedriverproxmoxve.GetProxmoxVEConnectionByValues("root", password, realm, host)
+	_, password, realm, host, port:= GetProxmoxAccess()
+	_, err := dockermachinedriverproxmoxve.GetProxmoxVEConnectionByValues("root", password, realm, host, port)
 	if err == nil {
 		t.Log(err)
 		t.Error()
@@ -39,8 +39,8 @@ func TestWrongUser(t *testing.T) {
 }
 
 func TestEmptyPass(t *testing.T) {
-	username, _, realm, host := GetProxmoxAccess()
-	_, err := dockermachinedriverproxmoxve.GetProxmoxVEConnectionByValues(username, "", realm, host)
+	username, _, realm, host, port := GetProxmoxAccess()
+	_, err := dockermachinedriverproxmoxve.GetProxmoxVEConnectionByValues(username, "", realm, host, port)
 	if err != nil && err.Error() != "You have to provide a password" {
 		t.Log(err)
 		t.Error()
@@ -48,8 +48,8 @@ func TestEmptyPass(t *testing.T) {
 }
 
 func TestWrongHost(t *testing.T) {
-	username, password, realm, _ := GetProxmoxAccess()
-	_, err := dockermachinedriverproxmoxve.GetProxmoxVEConnectionByValues(username, password, realm, "127.0.0.1")
+	username, password, realm, _, port := GetProxmoxAccess()
+	_, err := dockermachinedriverproxmoxve.GetProxmoxVEConnectionByValues(username, password, realm, "127.0.0.1", port)
 	if err == nil {
 		t.Log(err)
 		t.Error()

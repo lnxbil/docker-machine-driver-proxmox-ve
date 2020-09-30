@@ -40,12 +40,13 @@ type ProxmoxVE struct {
 }
 
 // GetProxmoxVEConnectionByValues is a wrapper for GetProxmoxVEConnection with strings as input
-func GetProxmoxVEConnectionByValues(username string, password string, realm string, hostname string) (*ProxmoxVE, error) {
+func GetProxmoxVEConnectionByValues(username string, password string, realm string, hostname string, port int) (*ProxmoxVE, error) {
 	return GetProxmoxVEConnection(&ProxmoxVE{
 		Username: username,
 		password: password,
 		Realm:    realm,
 		Host:     hostname,
+		Port:     port,
 	})
 }
 

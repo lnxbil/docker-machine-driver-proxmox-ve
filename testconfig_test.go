@@ -17,6 +17,7 @@ import (
 // ProxmoxConfig represents all needed login information
 type ProxmoxConfig struct {
 	Host     string `json:"host"`
+	Port     int    `json:"port"`
 	User     string `json:"user"`
 	Password string `json:"password"`
 	Realm    string `json:"realm"`
@@ -43,9 +44,9 @@ func GetProxmoxConfigInstance() *ProxmoxConfig {
 }
 
 // GetProxmoxAccess gets working proxmox ve access information
-func GetProxmoxAccess() (string, string, string, string) {
+func GetProxmoxAccess() (string, string, string, string, int) {
 	i := GetProxmoxConfigInstance()
-	return i.User, i.Password, i.Realm, i.Host
+	return i.User, i.Password, i.Realm, i.Host, i.Port
 }
 
 // GetProxmoxNode return the defined test node

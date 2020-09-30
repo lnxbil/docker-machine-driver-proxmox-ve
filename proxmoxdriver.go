@@ -39,6 +39,7 @@ type Driver struct {
 
 	// Basic Authentication for Proxmox VE
 	Host     string // Host to connect to
+	Port     int // Host port to connect to
 	Node     string // optional, node to create VM on, host used if omitted but must match internal node name
 	User     string // username
 	Password string // password
@@ -100,11 +101,11 @@ func (d *Driver) connectAPI() error {
 	if d.driver == nil {
 		d.debugf("Create called")
 
-		d.debugf("Connecting to %s as %s@%s with password '%s'", d.Host, d.User, d.Realm, d.Password)
-		c, err := GetProxmoxVEConnectionByValues(d.User, d.Password, d.Realm, d.Host)
+		d.debugf("Connecting to %s:%d as %s@%s with password '%s'", d.Host, d.Port, d.User, d.Realm, d.Password)
+		c, err := GetProxmoxVEConnectionByValues(d.User, d.Password, d.Realm, d.Host, d.Port)
 		d.driver = c
 		if err != nil {
-			return fmt.Errorf("Could not connect to host '%s' with '%s@%s'", d.Host, d.User, d.Realm)
+			return fmt.Errorf("Could not connect to host '%s:%d' with '%s@%s'", d.Host, d.Port, d.User, d.Realm)
 		}
 		if d.restyDebug {
 			c.EnableDebugging()
@@ -122,6 +123,12 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:   "proxmoxve-proxmox-host",
 			Usage:  "Host to connect to",
 			Value:  "192.168.1.253",
+		},
+		mcnflag.IntFlag{
+			EnvVar: "PROXMOXVE_PROXMOX_PORT",
+			Name:   "proxmoxve-proxmox-port",
+			Usage:  "Host port to connect to",
+			Value:  8006,
 		},
 		mcnflag.StringFlag{
 			EnvVar: "PROXMOXVE_PROXMOX_NODE",
@@ -357,6 +364,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 
 	// PROXMOX API Connection settings
 	d.Host = flags.String("proxmoxve-proxmox-host")
+	d.Port = flags.Int("proxmoxve-proxmox-port")
 	d.Node = flags.String("proxmoxve-proxmox-node")
 	if len(d.Node) == 0 {
 		d.Node = d.Host
