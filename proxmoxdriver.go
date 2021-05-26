@@ -714,10 +714,6 @@ func (d *Driver) Create() error {
 			npp.Ide3 = d.Storage + ":cloudinit"
 		}
 
-		if len(d.ScsiAttributes) > 0 {
-			npp.SCSI0 += "," + d.ScsiAttributes
-		}
-
 		if len(d.NUMA) > 0 {
 			npp.NUMA = d.NUMA
 		}
@@ -738,6 +734,11 @@ func (d *Driver) Create() error {
 				npp.SCSI0 = d.Storage + ":" + volume.Filename
 			}
 		}
+
+		if len(d.ScsiAttributes) > 0 {
+			npp.SCSI0 += "," + d.ScsiAttributes
+		}
+
 		d.debugf("Creating VM '%s' with '%d' of memory", npp.VMID, npp.Memory)
 		taskid, err := d.driver.NodesNodeQemuPost(d.Node, &npp)
 		if err != nil {
