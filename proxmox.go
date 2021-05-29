@@ -283,6 +283,32 @@ func (p ProxmoxVE) NodesNodeStorageStorageContentPost(node string, storage strin
 	return diskname, err
 }
 
+type VMResourcesReturnParameter struct {
+	Data []struct {
+		Node		string  `json:"node"`
+		Vmid		int     `json:"vmid"`
+	} `json:"data"`
+}
+
+func (p ProxmoxVE) ClusterVMIDNodeGet(vmid string) (node string, err error) {
+	path := "/cluster/resources"
+
+        response, err := p.client.R().SetQueryParams(map[string]string{"type": "vm"}).Get(p.getURL(path))
+
+	id, _ := strconv.Atoi(vmid)
+
+	var r VMResourcesReturnParameter
+        err = json.Unmarshal([]byte(response.String()), &r)
+
+	for _, vm := range r.Data {
+		if vm.Vmid == id {
+			return vm.Node, err
+		}
+	}
+
+	return p.Node, err
+}
+
 // ClusterNextIDGet Get next free VMID. If you pass an VMID it will raise an error if the ID is already used.
 func (p ProxmoxVE) ClusterNextIDGet(id int) (vmid string, err error) {
 	path := "/cluster/nextid"
