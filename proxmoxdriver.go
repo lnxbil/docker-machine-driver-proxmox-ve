@@ -388,6 +388,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.NetMtu = flags.String("proxmoxve-vm-net-mtu")
 	d.NetBridge = flags.String("proxmoxve-vm-net-bridge")
 	d.NetVlanTag = flags.Int("proxmoxve-vm-net-tag")
+	d.NUMA = flags.String("proxmoxve-vm-numa")
 	d.ScsiController = flags.String("proxmoxve-vm-scsi-controller")
 	d.ScsiAttributes = flags.String("proxmoxve-vm-scsi-attributes")
 
