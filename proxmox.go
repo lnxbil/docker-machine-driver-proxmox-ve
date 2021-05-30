@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"math/rand"
 
 	"github.com/labstack/gommon/log"
 	resty "gopkg.in/resty.v1"
@@ -324,6 +325,34 @@ func (p ProxmoxVE) ClusterNextIDGet(id int) (vmid string, err error) {
 		err = p.get(&input, &vmid, path)
 	}
 	return vmid, err
+}
+
+type NodeReturnParameter struct {
+	Data []struct {
+		Node		string  `json:"node"`
+		Status		string  `json:"status"`
+	} `json:"data"`
+}
+
+func (p ProxmoxVE) ClusterNodeGet() (node string, err error) {
+	path := "/cluster/resources"
+
+        response, err := p.client.R().SetQueryParams(map[string]string{"type": "node"}).Get(p.getURL(path))
+
+	var r NodeReturnParameter
+	var nodeList []string
+        err = json.Unmarshal([]byte(response.String()), &r)
+
+	for _, n := range r.Data {
+		if n.Status == "online" {
+			nodeList = append(nodeList, n.Node)
+		}
+	}
+
+	rand.Seed(time.Now().Unix())
+	n := rand.Int() % len(nodeList)
+
+	return nodeList[n], err
 }
 
 // NodesNodeQemuPostParameter represents the input data for /nodes/{node}/qemu
