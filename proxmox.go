@@ -317,7 +317,7 @@ type NodesNodeQemuPostParameter struct {
 	Pool       string // optional, Add the VM to the specified pool.
 	Sockets    string `json:"sockets,omitempty"` // optional, The number of cpus.
 	Cores      string `json:"cores,omitempty"`   // optional, The number of cores per socket.
-	Cdrom      string // optional, This is an alias for option -ide2
+	SATA0      string // optional, This is an alias for option -ide2
 	Ide3       string
 	Citype     string // Specifies the cloud-init configuration format.
 	Scsihw     string // SCSI controller model.
