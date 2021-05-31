@@ -313,10 +313,11 @@ type NodesNodeQemuPostParameter struct {
 	SCSI0      string // optional, Use volume as VIRTIO hard disk (n is 0 to 15).
 	Ostype     string // optional, Specify guest operating system.
 	KVM        string // optional, Enable/disable KVM hardware virtualization.
+	Tablet     string // optional, Enable/disable the USB tablet device.
 	Pool       string // optional, Add the VM to the specified pool.
 	Sockets    string `json:"sockets,omitempty"` // optional, The number of cpus.
 	Cores      string `json:"cores,omitempty"`   // optional, The number of cores per socket.
-	Cdrom      string // optional, This is an alias for option -ide2
+	SATA0      string // optional, This is an alias for option -ide2
 	Ide3       string
 	Citype     string // Specifies the cloud-init configuration format.
 	Scsihw     string // SCSI controller model.

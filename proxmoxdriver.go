@@ -703,8 +703,9 @@ func (d *Driver) Create() error {
 			Ostype:     "l26",
 			Name:       d.BaseDriver.MachineName,
 			KVM:        "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization
+			Tablet:     "0",
 			Scsihw:     d.ScsiController,
-			Cdrom:      d.ImageFile,
+			SATA0:      d.ImageFile+",media=cdrom",
 			Pool:       d.Pool,
 			Protection: d.Protection,
 		}
@@ -821,6 +822,7 @@ func (d *Driver) Create() error {
 			Sockets:    d.CPUSockets,
 			Cores:      d.CPUCores,
 			KVM:        "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization,
+			Tablet:     "0",
 			Citype:     d.Citype,
 			Onboot:     d.Onboot,
 			Protection: d.Protection,
