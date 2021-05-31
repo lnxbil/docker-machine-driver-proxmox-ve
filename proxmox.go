@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"math/rand"
 
 	"github.com/labstack/gommon/log"
 	resty "gopkg.in/resty.v1"
@@ -283,6 +284,32 @@ func (p ProxmoxVE) NodesNodeStorageStorageContentPost(node string, storage strin
 	return diskname, err
 }
 
+type VMResourcesReturnParameter struct {
+	Data []struct {
+		Node		string  `json:"node"`
+		Vmid		int     `json:"vmid"`
+	} `json:"data"`
+}
+
+func (p ProxmoxVE) ClusterVMIDNodeGet(vmid string) (node string, err error) {
+	path := "/cluster/resources"
+
+        response, err := p.client.R().SetQueryParams(map[string]string{"type": "vm"}).Get(p.getURL(path))
+
+	id, _ := strconv.Atoi(vmid)
+
+	var r VMResourcesReturnParameter
+        err = json.Unmarshal([]byte(response.String()), &r)
+
+	for _, vm := range r.Data {
+		if vm.Vmid == id {
+			return vm.Node, err
+		}
+	}
+
+	return p.Node, err
+}
+
 // ClusterNextIDGet Get next free VMID. If you pass an VMID it will raise an error if the ID is already used.
 func (p ProxmoxVE) ClusterNextIDGet(id int) (vmid string, err error) {
 	path := "/cluster/nextid"
@@ -298,6 +325,34 @@ func (p ProxmoxVE) ClusterNextIDGet(id int) (vmid string, err error) {
 		err = p.get(&input, &vmid, path)
 	}
 	return vmid, err
+}
+
+type NodeReturnParameter struct {
+	Data []struct {
+		Node		string  `json:"node"`
+		Status		string  `json:"status"`
+	} `json:"data"`
+}
+
+func (p ProxmoxVE) ClusterNodeGet() (node string, err error) {
+	path := "/cluster/resources"
+
+        response, err := p.client.R().SetQueryParams(map[string]string{"type": "node"}).Get(p.getURL(path))
+
+	var r NodeReturnParameter
+	var nodeList []string
+        err = json.Unmarshal([]byte(response.String()), &r)
+
+	for _, n := range r.Data {
+		if n.Status == "online" {
+			nodeList = append(nodeList, n.Node)
+		}
+	}
+
+	rand.Seed(time.Now().Unix())
+	n := rand.Int() % len(nodeList)
+
+	return nodeList[n], err
 }
 
 // NodesNodeQemuPostParameter represents the input data for /nodes/{node}/qemu
@@ -779,8 +834,8 @@ func (p ProxmoxVE) WaitForTaskToComplete(node string, taskid string) error {
 			log.Infof("exiting with %s", tsr.Exitstatus)
 			return nil
 		}
-		log.Info("still running, waiting 500ms")
-		time.Sleep(500 * time.Millisecond)
+		log.Info("still running, waiting 1s")
+		time.Sleep(time.Second)
 	}
 	// unreachable code
 	return nil

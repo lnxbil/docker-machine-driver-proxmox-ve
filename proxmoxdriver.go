@@ -333,8 +333,13 @@ func (d *Driver) ping() bool {
 		return false
 	}
 
+	node, nodeErr := d.driver.ClusterVMIDNodeGet(d.VMID)
+	if nodeErr != nil {
+		return false
+	}
+
 	command := NodesNodeQemuVMIDAgentPostParameter{Command: "ping"}
-	err := d.driver.NodesNodeQemuVMIDAgentPost(d.Node, d.VMID, &command)
+	err := d.driver.NodesNodeQemuVMIDAgentPost(node, d.VMID, &command)
 
 	if err != nil {
 		d.debug(err)
@@ -444,7 +449,12 @@ func (d *Driver) GetNetVlanTag() int {
 func (d *Driver) GetIP() (string, error) {
 	d.connectAPI()
 
-	ip, err := d.driver.GetEth0IPv4(d.Node, d.VMID)
+	node, err := d.driver.ClusterVMIDNodeGet(d.VMID)
+	if err != nil {
+		return "", err
+	}
+
+	ip, err := d.driver.GetEth0IPv4(node, d.VMID)
 	if err != nil {
 		// TODO: should we return the cached IP here?
 		return ip, err
@@ -485,8 +495,13 @@ func (d *Driver) GetState() (state.State, error) {
 		return state.Error, err
 	}
 
+	node, err := d.driver.ClusterVMIDNodeGet(d.VMID)
+	if err != nil {
+		return state.Error, err
+	}
+
 	// sanity check the UUID
-	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	config, err := d.driver.GetConfig(node, d.VMID)
 	if err != nil {
 		return state.Error, err
 	}
@@ -514,7 +529,7 @@ func (d *Driver) GetState() (state.State, error) {
 		return state.Starting, nil
 	}
 
-	pveState, err := d.driver.NodesNodeQemuVMIDStatusCurrentGet(d.Node, d.VMID)
+	pveState, err := d.driver.NodesNodeQemuVMIDStatusCurrentGet(node, d.VMID)
 	if err != nil {
 		return state.Error, err
 	}
@@ -620,9 +635,11 @@ func (d *Driver) Create() error {
 	// add some random wait time here to help with race conditions in the proxmox api
 	// the app could be getting invoked several times in rapid succession so some small waits may be helpful
 	mrand.Seed(time.Now().UnixNano()) // Seed the random number generator using the current time (nanoseconds since epoch)
-	r := mrand.Intn(5000)
-	d.debugf("sleeping %d milliseconds before retrieving next ID", r)
-	time.Sleep(time.Duration(r) * time.Millisecond)
+	min := 5
+	max := 15
+	r := mrand.Intn(max - min + 1) + min
+	d.debugf("sleeping %d seconds before retrieving next ID", r)
+	time.Sleep(time.Duration(r) * time.Second)
 
 	// get next available VMID
 	// NOTE: we want to lock in the ID as quickly as possible after retrieving (ie: invoke QemuPost or Clone ASAP to avoid race conditions with other instances)
@@ -669,6 +686,11 @@ func (d *Driver) Create() error {
 	d.debugf("Next ID is '%s'", id)
 	d.VMID = id
 
+	node, err := d.driver.ClusterNodeGet()
+	if err != nil {
+		return err
+	}
+
 	switch d.ProvisionStrategy {
 	case "cdrom":
 
@@ -682,7 +704,7 @@ func (d *Driver) Create() error {
 		}
 
 		d.debugf("Creating disk volume '%s' with size '%s'", volume.Filename, volume.Size)
-		diskname, err := d.driver.NodesNodeStorageStorageContentPost(d.Node, d.Storage, &volume)
+		diskname, err := d.driver.NodesNodeStorageStorageContentPost(node, d.Storage, &volume)
 		if err != nil {
 			return err
 		}
@@ -739,12 +761,12 @@ func (d *Driver) Create() error {
 			}
 		}
 		d.debugf("Creating VM '%s' with '%d' of memory", npp.VMID, npp.Memory)
-		taskid, err := d.driver.NodesNodeQemuPost(d.Node, &npp)
+		taskid, err := d.driver.NodesNodeQemuPost(node, &npp)
 		if err != nil {
 			return err
 		}
 
-		err = d.driver.WaitForTaskToComplete(d.Node, taskid)
+		err = d.driver.WaitForTaskToComplete(node, taskid)
 		if err != nil {
 			return err
 		}
@@ -752,12 +774,12 @@ func (d *Driver) Create() error {
 		if d.CiEnabled == "1" {
 			// specially handle setting sshkeys
 			// https://forum.proxmox.com/threads/how-to-use-pvesh-set-vms-sshkeys.52570/
-			taskid, err = d.driver.NodesNodeQemuVMIDConfigSetSSHKeys(d.Node, d.VMID, key)
+			taskid, err = d.driver.NodesNodeQemuVMIDConfigSetSSHKeys(node, d.VMID, key)
 			if err != nil {
 				return err
 			}
 
-			err = d.driver.WaitForTaskToComplete(d.Node, taskid)
+			err = d.driver.WaitForTaskToComplete(node, taskid)
 			if err != nil {
 				return err
 			}
@@ -790,12 +812,12 @@ func (d *Driver) Create() error {
 
 		d.debugf("cloning template id '%s' as vmid '%s'", d.CloneVMID, clone.Newid)
 
-		taskid, err := d.driver.NodesNodeQemuVMIDClonePost(d.Node, d.CloneVMID, &clone)
+		taskid, err := d.driver.NodesNodeQemuVMIDClonePost(node, d.CloneVMID, &clone)
 		if err != nil {
 			return err
 		}
 
-		err = d.driver.WaitForTaskToComplete(d.Node, taskid)
+		err = d.driver.WaitForTaskToComplete(node, taskid)
 		if err != nil {
 			return err
 		}
@@ -807,7 +829,7 @@ func (d *Driver) Create() error {
 		}
 		d.debugf("resizing disk '%s' on vmid '%s' to '%s'", resize.Disk, d.VMID, resize.Size)
 
-		err = d.driver.NodesNodeQemuVMIDResizePut(d.Node, d.VMID, &resize)
+		err = d.driver.NodesNodeQemuVMIDResizePut(node, d.VMID, &resize)
 		if err != nil {
 			return err
 		}
@@ -838,14 +860,14 @@ func (d *Driver) Create() error {
 			npp.CPU = d.CPU
 		}
 
-		taskid, err = d.driver.NodesNodeQemuVMIDConfigPost(d.Node, d.VMID, &npp)
+		taskid, err = d.driver.NodesNodeQemuVMIDConfigPost(node, d.VMID, &npp)
 		if err != nil {
 			return err
 		}
 
 		// append newly minted ssh key to existing (if any)
 		d.debugf("retrieving existing cloud-init sshkeys from vmid '%s'", d.VMID)
-		config, err := d.driver.GetConfig(d.Node, d.CloneVMID)
+		config, err := d.driver.GetConfig(node, d.CloneVMID)
 		if err != nil {
 			return err
 		}
@@ -867,12 +889,12 @@ func (d *Driver) Create() error {
 
 		// specially handle setting sshkeys
 		// https://forum.proxmox.com/threads/how-to-use-pvesh-set-vms-sshkeys.52570/
-		taskid, err = d.driver.NodesNodeQemuVMIDConfigSetSSHKeys(d.Node, d.VMID, SSHKeys)
+		taskid, err = d.driver.NodesNodeQemuVMIDConfigSetSSHKeys(node, d.VMID, SSHKeys)
 		if err != nil {
 			return err
 		}
 
-		err = d.driver.WaitForTaskToComplete(d.Node, taskid)
+		err = d.driver.WaitForTaskToComplete(node, taskid)
 		if err != nil {
 			return err
 		}
@@ -882,7 +904,7 @@ func (d *Driver) Create() error {
 	}
 
 	// Set the newly minted UUID
-	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	config, err := d.driver.GetConfig(node, d.VMID)
 	if err != nil {
 		return err
 	}
@@ -896,8 +918,8 @@ func (d *Driver) Create() error {
 	}
 
 	// let VM start a settle a little
-	d.debugf("waiting for VM to start, wait 10 seconds")
-	time.Sleep(10 * time.Second)
+	d.debugf("waiting for VM to start, wait 15 seconds")
+	time.Sleep(15 * time.Second)
 
 	// wait for qemu-guest-agent
 	err = d.waitForQemuGuestAgent()
@@ -906,7 +928,7 @@ func (d *Driver) Create() error {
 	}
 
 	// wait for network to come up
-	err = d.waitForNetwork()
+	err = d.waitForNetwork(node, d.VMID)
 
 	// set the IPAddress
 	_, err = d.GetIP()
@@ -933,13 +955,13 @@ func (d *Driver) waitForQemuGuestAgent() error {
 	d.connectAPI()
 	for !d.ping() {
 		d.debugf("waiting for VM qemu-guest-agent to start")
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
 
 	return nil
 }
 
-func (d *Driver) waitForNetwork() error {
+func (d *Driver) waitForNetwork(node string, vmid string) error {
 	d.debugf("waiting for VM network to start")
 	d.connectAPI()
 
@@ -948,17 +970,17 @@ func (d *Driver) waitForNetwork() error {
 	var err error
 
 	for !up {
-		ip, err = d.driver.GetEth0IPv4(d.Node, d.VMID)
+		ip, err = d.driver.GetEth0IPv4(node, vmid)
 		if err != nil {
 			d.debugf("waiting for VM network to start")
-			time.Sleep(5 * time.Second)
+			time.Sleep(10 * time.Second)
 		} else {
 			if len(ip) > 0 {
 				up = true
 				d.debugf("VM network started with ip: %s", ip)
 			} else {
 				d.debugf("waiting for VM network to start")
-				time.Sleep(5 * time.Second)
+				time.Sleep(10 * time.Second)
 			}
 		}
 	}
@@ -1047,8 +1069,13 @@ func (d *Driver) Start() error {
 		return err
 	}
 
+	node, err := d.driver.ClusterVMIDNodeGet(d.VMID)
+	if err != nil {
+		return err
+	}
+
 	// sanity check the UUID
-	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	config, err := d.driver.GetConfig(node, d.VMID)
 	if err != nil {
 		return err
 	}
@@ -1058,12 +1085,12 @@ func (d *Driver) Start() error {
 		return fmt.Errorf("UUID mismatch - %s (stored) vs %s (current)", d.VMUUID, cVMMUUID)
 	}
 
-	taskid, err := d.driver.NodesNodeQemuVMIDStatusStartPost(d.Node, d.VMID)
+	taskid, err := d.driver.NodesNodeQemuVMIDStatusStartPost(node, d.VMID)
 	if err != nil {
 		return err
 	}
 
-	err = d.driver.WaitForTaskToComplete(d.Node, taskid)
+	err = d.driver.WaitForTaskToComplete(node, taskid)
 
 	return err
 }
@@ -1079,8 +1106,13 @@ func (d *Driver) Stop() error {
 		return err
 	}
 
+	node, err := d.driver.ClusterVMIDNodeGet(d.VMID)
+	if err != nil {
+		return err
+	}
+
 	// sanity check the UUID
-	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	config, err := d.driver.GetConfig(node, d.VMID)
 	if err != nil {
 		return err
 	}
@@ -1091,12 +1123,12 @@ func (d *Driver) Stop() error {
 	}
 
 	// shutdown
-	taskid, err := d.driver.NodesNodeQemuVMIDStatusShutdownPost(d.Node, d.VMID)
+	taskid, err := d.driver.NodesNodeQemuVMIDStatusShutdownPost(node, d.VMID)
 	if err != nil {
 		return err
 	}
 
-	err = d.driver.WaitForTaskToComplete(d.Node, taskid)
+	err = d.driver.WaitForTaskToComplete(node, taskid)
 
 	return err
 }
@@ -1112,8 +1144,13 @@ func (d *Driver) Restart() error {
 		return err
 	}
 
+	node, err := d.driver.ClusterVMIDNodeGet(d.VMID)
+	if err != nil {
+		return err
+	}
+
 	// sanity check the UUID
-	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	config, err := d.driver.GetConfig(node, d.VMID)
 	if err != nil {
 		return err
 	}
@@ -1124,12 +1161,12 @@ func (d *Driver) Restart() error {
 	}
 
 	// reboot
-	taskid, err := d.driver.NodesNodeQemuVMIDStatusRebootPost(d.Node, d.VMID)
+	taskid, err := d.driver.NodesNodeQemuVMIDStatusRebootPost(node, d.VMID)
 	if err != nil {
 		return err
 	}
 
-	err = d.driver.WaitForTaskToComplete(d.Node, taskid)
+	err = d.driver.WaitForTaskToComplete(node, taskid)
 
 	return err
 }
@@ -1145,8 +1182,13 @@ func (d *Driver) Kill() error {
 		return err
 	}
 
+	node, err := d.driver.ClusterVMIDNodeGet(d.VMID)
+	if err != nil {
+		return err
+	}
+
 	// sanity check the UUID
-	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	config, err := d.driver.GetConfig(node, d.VMID)
 	if err != nil {
 		return err
 	}
@@ -1157,12 +1199,12 @@ func (d *Driver) Kill() error {
 	}
 
 	// stop
-	taskid, err := d.driver.NodesNodeQemuVMIDStatusStopPost(d.Node, d.VMID)
+	taskid, err := d.driver.NodesNodeQemuVMIDStatusStopPost(node, d.VMID)
 	if err != nil {
 		return err
 	}
 
-	err = d.driver.WaitForTaskToComplete(d.Node, taskid)
+	err = d.driver.WaitForTaskToComplete(node, taskid)
 
 	return err
 }
@@ -1178,8 +1220,13 @@ func (d *Driver) Remove() error {
 		return err
 	}
 
+	node, err := d.driver.ClusterVMIDNodeGet(d.VMID)
+	if err != nil {
+		return err
+	}
+
 	// sanity check the UUID
-	config, err := d.driver.GetConfig(d.Node, d.VMID)
+	config, err := d.driver.GetConfig(node, d.VMID)
 	if err != nil {
 		return err
 	}
@@ -1195,12 +1242,12 @@ func (d *Driver) Remove() error {
 		return err
 	}
 
-	taskid, err := d.driver.NodesNodeQemuVMIDDelete(d.Node, d.VMID)
+	taskid, err := d.driver.NodesNodeQemuVMIDDelete(node, d.VMID)
 	if err != nil {
 		return err
 	}
 
-	err = d.driver.WaitForTaskToComplete(d.Node, taskid)
+	err = d.driver.WaitForTaskToComplete(node, taskid)
 	return err
 }
 
