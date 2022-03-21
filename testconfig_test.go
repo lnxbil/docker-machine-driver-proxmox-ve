@@ -1,4 +1,4 @@
-package dockermachinedriverproxmoxve_test
+package main_test
 
 // Test Proxmox VE instance configuration
 // as a singleton according to http://marcio.io/2015/07/singleton-pattern-in-go/

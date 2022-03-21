@@ -1,4 +1,4 @@
-package dockermachinedriverproxmoxve_test
+package main_test
 
 import (
 	"errors"

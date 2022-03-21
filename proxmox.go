@@ -1,4 +1,4 @@
-package dockermachinedriverproxmoxve
+package main
 
 // This file is most copy & pasted from my private project to
 // auto-generate the API client on basis of the JSON described API
