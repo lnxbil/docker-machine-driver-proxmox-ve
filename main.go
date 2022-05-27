@@ -5,5 +5,5 @@ import (
 )
 
 func main() {
-	plugin.RegisterDriver(NewDriver("default", ""))
+	plugin.RegisterDriver(NewDriver())
 }

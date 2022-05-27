@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"golang.org/x/crypto/ssh"
 	resty "gopkg.in/resty.v1"
 
@@ -1210,12 +1212,12 @@ func (d *Driver) Upgrade() error {
 }
 
 // NewDriver returns a new driver
-func NewDriver(hostName, storePath string) drivers.Driver {
+func NewDriver() drivers.Driver {
 	return &Driver{
 		BaseDriver: &drivers.BaseDriver{
 			SSHUser:     "docker",
-			MachineName: hostName,
-			StorePath:   storePath,
+			MachineName: uuid.New().String(),
+			StorePath:   "",
 		},
 	}
 }
