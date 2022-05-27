@@ -1,0 +1,77 @@
+---
+- name: Create new VM Template
+  block:
+    - name: Download cloud img
+      get_url:
+        url: https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img
+        dest: /root/focal-server-cloudimg-amd64.img
+        mode: '0440'
+
+    - name: Get next free VM ID
+      command: pvesh get /cluster/nextid
+      register: vmid
+      changed_when: false
+
+    - debug:
+        msg: "Got VM ID: {{ vmid.stdout }}"
+
+    - name: Create a new virtual machine
+      command: "qm create {{ vmid.stdout }} --memory 2048 --core 2 --name {{ vmname }} --net0 virtio,bridge=vmbr0"
+
+    - name: Import the downloaded Ubuntu disk to storage
+      command: "qm importdisk {{ vmid.stdout }} focal-server-cloudimg-amd64.img {{ storage_name | default('local-lvm') }}"
+
+    - name: Attach the new disk to the vm as a scsi drive on the scsi controller
+      command: "qm set {{ vmid.stdout }} --scsihw virtio-scsi-pci --scsi0 {{ storage_name | default('local-lvm') }}:vm-{{ vmid.stdout }}-disk-0"
+
+    - name: Add cloud init drive
+      command: "qm set {{ vmid.stdout }} --ide2 {{ storage_name | default('local-lvm') }}:cloudinit"
+
+    - name: Make the cloud init drive bootable and restrict BIOS to boot from disk only
+      command: "qm set {{ vmid.stdout }} --boot c --bootdisk scsi0"
+
+    - name: Add serial console
+      command: "qm set {{ vmid.stdout }} --serial0 socket --vga serial0"
+
+    - name: create temporary file
+      tempfile:
+        state: file
+      register: tempfile
+
+    - name: Save SSH-keys to temporary file
+      copy:
+        content: "{{ proxmox_vm_sshkeys }}"
+        dest: "{{ tempfile.path }}"
+
+    - name: Set cloud-init options
+      shell: |
+        qm set {{ vmid.stdout }} --sshkey {{ tempfile.path }}
+        qm set {{ vmid.stdout }} --ipconfig0 {{ proxmox_vm_ipconfig }}
+
+    - name: Creates snippets directory
+      file:
+        path: /var/lib/vz/snippets
+        state: directory
+
+    - name: Add vendor snippet for guest agent install
+      copy:
+        content: |
+          #cloud-config
+          packages:
+              - qemu-guest-agent
+          runcmd:
+              - systemctl start qemu-guest-agent
+        dest: "/var/lib/vz/snippets/vendor.yaml"
+
+    # https://pve.proxmox.com/wiki/Cloud-Init_Support
+    - name: Add Custom Cloud-Init Configuration
+      command: "qm set {{ vmid.stdout }} --cicustom 'vendor=local:snippets/vendor.yaml'"
+
+    - name: check ci 
+      command: qm cloudinit dump {{ vmid.stdout }} user
+
+    - name: Create template
+      command: "qm template {{ vmid.stdout }}"
+
+    - debug:
+        msg: "Finished Template VM ID: {{ vmid.stdout }}"

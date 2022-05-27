@@ -1,0 +1,9 @@
+---
+
+- name: docker-machine proxmox vm template
+  connection: ansible.netcommon.network_cli
+  gather_facts: false
+  hosts: all
+  tasks:
+    - name: Create template task
+      include_tasks: tasks/main.yaml
