@@ -5,7 +5,6 @@ go 1.16
 require (
 	github.com/docker/docker v20.10.13+incompatible // indirect
 	github.com/docker/machine v0.16.2
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/labstack/gommon v0.3.1
 	github.com/lnxbil/docker-machine-driver-proxmox-ve v0.0.0-20200729213752-424d127ead78
 	github.com/moby/term v0.0.0-20210619224110-3f7ff695adc6 // indirect
