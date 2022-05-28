@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	dockermachinedriverproxmoxve "github.com/lnxbil/docker-machine-driver-proxmox-ve"
+	dockermachinedriverproxmoxve "github.com/deepshore/docker-machine-driver-proxmoxve"
 )
 
 // ProxmoxConfig represents all needed login information

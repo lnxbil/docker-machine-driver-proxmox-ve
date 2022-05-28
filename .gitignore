@@ -13,3 +13,6 @@
 
 # we don't want to include the source files of the dependencies
 vendor
+
+thunder-tests
+ignore

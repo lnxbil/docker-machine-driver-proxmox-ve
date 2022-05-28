@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	dockermachinedriverproxmoxve "github.com/lnxbil/docker-machine-driver-proxmox-ve"
+	dockermachinedriverproxmoxve "github.com/deepshore/docker-machine-driver-proxmoxve"
 )
 
 func TestSuccessfulConnection(t *testing.T) {
