@@ -3,7 +3,7 @@ module github.com/deepshore/docker-machine-driver-proxmoxve
 go 1.16
 
 require (
-	github.com/docker/docker v20.10.16+incompatible // indirect
+	github.com/docker/docker v20.10.24+incompatible // indirect
 	github.com/docker/machine v0.16.2
 	github.com/labstack/gommon v0.3.1
 	github.com/mattn/go-colorable v0.1.12 // indirect
