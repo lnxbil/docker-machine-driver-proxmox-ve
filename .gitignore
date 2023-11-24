@@ -16,3 +16,5 @@ vendor
 
 thunder-tests
 ignore
+
+docker-machine-driver*
