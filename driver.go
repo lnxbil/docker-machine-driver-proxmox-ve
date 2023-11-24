@@ -1026,35 +1026,31 @@ func (d *Driver) Remove() error {
 		return nil
 	}
 
-	err := d.connectApi()
+	vm, err := d.GetVM()
 	if err != nil {
 		return err
 	}
 
-	// sanity check the UUID
-	config, err := d.GetConfig(d.Node, d.VMID)
-	if err != nil {
-		return err
+	stopTask, err2 := vm.Stop(context.Background())
+	if err2 != nil {
+		return err2
+	}
+	// wait for the stop task
+	if err3 := stopTask.Wait(context.Background(), time.Duration(5*time.Second), time.Duration(300*time.Second)); err3 != nil {
+		return err3
 	}
 
-	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
-	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
-		return nil
+	deleteTask, err4 := vm.Delete(context.Background())
+	if err4 != nil {
+		return err4
 	}
 
-	// force shut down VM before invoking delete
-	err = d.Kill()
-	if err != nil {
-		return err
+	// wait for the delete task
+	if err5 := deleteTask.Wait(context.Background(), time.Duration(5*time.Second), time.Duration(300*time.Second)); err5 != nil {
+		return err5
 	}
 
-	taskid, err := d.NodesNodeQemuVMIDDelete(d.Node, d.VMID)
-	if err != nil {
-		return err
-	}
-
-	err = d.WaitForTaskToComplete(d.Node, taskid)
-	return err
+	return nil
 }
 
 // Upgrade is currently a NOOP
