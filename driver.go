@@ -33,7 +33,7 @@ import (
 // Driver for Proxmox VE
 type Driver struct {
 	*drivers.BaseDriver
-
+	client *proxmox.Client
 	// Top-level strategy for proisioning a new node
 	ProvisionStrategy string
 
@@ -70,6 +70,7 @@ type Driver struct {
 	ScsiAttributes string
 
 	VMID          string // VM ID only filled by create()
+	VMID_int      int    // Same as VMID but int
 	VMIDRange     string // acceptable range of VMIDs
 	VMUUID        string // UUID to confirm
 	CloneVMID     string // VM ID to clone
@@ -96,20 +97,20 @@ func (d *Driver) debug(v ...interface{}) {
 	}
 }
 
-func (d *Driver) connectApi() {
+func (d *Driver) connectApi() (client *proxmox.Client, err error) {
 	credentials := proxmox.Credentials{
 		Username: "root@pam",
 		Password: "12345",
 	}
-	client := proxmox.NewClient("https://localhost:8006/api2/json",
+	d.client = proxmox.NewClient("https://localhost:8006/api2/json",
 		proxmox.WithCredentials(&credentials),
 	)
 
 	version, err := client.Version(context.Background())
-	if err != nil {
-		panic(err)
+	if err == nil {
+		log.Info(version.Release)
 	}
-	fmt.Println(version.Release) // 7.4
+	return d.client, err
 }
 
 // GetCreateFlags returns the argument flags for the program
@@ -331,6 +332,8 @@ func (d *Driver) ping() bool {
 		return false
 	}
 
+	proxmox.VirtualMachine()
+
 	command := NodesNodeQemuVMIDAgentPostParameter{Command: "ping"}
 	err := d.NodesNodeQemuVMIDAgentPost(d.Node, d.VMID, &command)
 
@@ -477,13 +480,15 @@ func (d *Driver) GetState() (state.State, error) {
 		return state.Error, errors.New("invalid VMID")
 	}
 
-	err := d.connectApi()
+	client, err := d.connectApi()
 	if err != nil {
 		return state.Error, err
 	}
 
 	// sanity check the UUID
-	config, err := d.GetConfig(d.Node, d.VMID)
+	node, err := client.Node(context.Background(), d.Node)
+	node.VirtualMachine(context.Background(), d.VMID)
+	config, err := client.GetConfig(d.Node, d.VMID)
 	if err != nil {
 		return state.Error, err
 	}
@@ -529,9 +534,8 @@ func (d *Driver) GetState() (state.State, error) {
 // PreCreateCheck is called to enforce pre-creation steps
 func (d *Driver) PreCreateCheck() error {
 
-	err := d.connectApi()
-	if err != nil {
-		return err
+	if d.client == nil {
+		d.client = d.connectApi()
 	}
 
 	switch d.ProvisionStrategy {
@@ -568,20 +572,22 @@ func (d *Driver) PreCreateCheck() error {
 			return fmt.Errorf("storage type '%s' is not supported", d.StorageType)
 		}
 
-		storageType, err := d.GetStorageType(d.Node, d.Storage)
+		node, err := d.client.Node(context.Background(), d.Node)
 		if err != nil {
 			return err
 		}
 
+		storage, err := node.Storage(context.Background(), d.Storage)
+
 		filename := "-disk-0"
-		switch storageType {
+		switch storage.Type {
 		case "lvmthin":
 			fallthrough
 		case "zfs":
 			fallthrough
 		case "ceph":
 			if d.StorageType != "raw" {
-				return fmt.Errorf("type '%s' on storage '%s' does only support raw", storageType, d.Storage)
+				return fmt.Errorf("type '%s' on storage '%s' does only support raw", storage.Type, d.Storage)
 			}
 		case "nfs":
 			fallthrough
@@ -625,157 +631,33 @@ func (d *Driver) Create() error {
 	// NOTE: we want to lock in the ID as quickly as possible after retrieving (ie: invoke QemuPost or Clone ASAP to avoid race conditions with other instances)
 	d.debug("Retrieving next ID")
 
-	var id string
-	if len(d.VMIDRange) > 0 {
-		VMIDParts := strings.Split(d.VMIDRange, ":")
-		low, err := strconv.Atoi(VMIDParts[0])
-		if err != nil {
-			return err
-		}
-
-		var high = 0
-		if len(VMIDParts) > 1 {
-			high, err = strconv.Atoi(VMIDParts[1])
-			if err != nil {
-				return err
-			}
-		}
-
-		d.debugf("Looking for available VMID in range '%d:%d'", low, high)
-
-		var i = low
-		for len(id) < 1 {
-			id, err = d.ClusterNextIDGet(i)
-			if err != nil && high > 0 && i > high {
-				return err
-			}
-
-			if high > 0 && i >= high {
-				return fmt.Errorf("no VMIDs available in range '%d:%d'", low, high)
-			}
-
-			i++
-		}
-	} else {
-		id, err = d.ClusterNextIDGet(0)
-		if err != nil {
-			return err
-		}
+	cluster, err := d.client.Cluster(context.Background())
+	if err != nil {
+		return err
 	}
 
+	id, err := cluster.NextID(context.Background())
+
 	d.debugf("Next ID is '%s'", id)
-	d.VMID = id
+	d.VMID = string(id)
+	d.VMID_int = id
 
 	switch d.ProvisionStrategy {
-	case "cdrom":
-
-		// prefixing StorageFilename with VMID
-		d.StorageFilename = "vm-" + d.VMID + d.StorageFilename
-
-		volume := NodesNodeStorageStorageContentPostParameter{
-			Filename: d.StorageFilename,
-			Size:     d.DiskSize + "G",
-			VMID:     d.VMID,
-		}
-
-		d.debugf("Creating disk volume '%s' with size '%s'", volume.Filename, volume.Size)
-		diskname, err := d.NodesNodeStorageStorageContentPost(d.Node, d.Storage, &volume)
-		if err != nil {
-			return err
-		}
-
-		if !strings.HasSuffix(diskname, d.StorageFilename) {
-			return fmt.Errorf("returned diskname is not correct: should be '%s' but was '%s'", d.StorageFilename, diskname)
-		}
-
-		npp := NodesNodeQemuPostParameter{
-			VMID:       d.VMID,
-			Agent:      "1",
-			Autostart:  "1",
-			Onboot:     d.Onboot,
-			Memory:     d.Memory,
-			Sockets:    d.CPUSockets,
-			Cores:      d.CPUCores,
-			SCSI0:      d.StorageFilename,
-			Ostype:     "l26",
-			Name:       d.BaseDriver.MachineName,
-			KVM:        "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization
-			Scsihw:     d.ScsiController,
-			Cdrom:      d.ImageFile,
-			Pool:       d.Pool,
-			Protection: d.Protection,
-		}
-
-		if d.CiEnabled == "1" {
-			npp.Citype = d.Citype
-			npp.Ide3 = d.Storage + ":cloudinit"
-		}
-
-		if len(d.ScsiAttributes) > 0 {
-			npp.SCSI0 += "," + d.ScsiAttributes
-		}
-
-		if len(d.NUMA) > 0 {
-			npp.NUMA = d.NUMA
-		}
-
-		if len(d.CPU) > 0 {
-			npp.CPU = d.CPU
-		}
-
-		npp.Net0, _ = d.generateNetString()
-
-		if d.StorageType == "qcow2" {
-			npp.SCSI0 = d.Storage + ":" + d.VMID + "/" + volume.Filename
-		} else if d.StorageType == "raw" {
-			if strings.HasSuffix(volume.Filename, ".raw") {
-				// raw files (having .raw) should have the VMID in the path
-				npp.SCSI0 = d.Storage + ":" + d.VMID + "/" + volume.Filename
-			} else {
-				npp.SCSI0 = d.Storage + ":" + volume.Filename
-			}
-		}
-		d.debugf("Creating VM '%s' with '%d' of memory", npp.VMID, npp.Memory)
-		taskid, err := d.NodesNodeQemuPost(d.Node, &npp)
-		if err != nil {
-			return err
-		}
-
-		err = d.WaitForTaskToComplete(d.Node, taskid)
-		if err != nil {
-			return err
-		}
-
-		if d.CiEnabled == "1" {
-			// specially handle setting sshkeys
-			// https://forum.proxmox.com/threads/how-to-use-pvesh-set-vms-sshkeys.52570/
-			taskid, err = d.NodesNodeQemuVMIDConfigSetSSHKeys(d.Node, d.VMID, key)
-			if err != nil {
-				return err
-			}
-
-			err = d.WaitForTaskToComplete(d.Node, taskid)
-			if err != nil {
-				return err
-			}
-		}
-
-		break
 	case "clone":
 
-		// clone
-		clone := NodesNodeQemuVMIDClonePostParameter{
-			Newid: d.VMID,
-			Name:  d.BaseDriver.MachineName,
+		clone := &proxmox.VirtualMachineCloneOptions{
+			Name:  d.MachineName,
+			Full:  1,
+			NewID: d.VMID_int,
 			Pool:  d.Pool,
 		}
 
 		switch d.CloneFull {
 		case 0:
-			clone.Full = "0"
+			clone.Full = 0
 			break
 		case 1:
-			clone.Full = "1"
+			clone.Full = 1
 			clone.Format = d.StorageType
 			clone.Storage = d.Storage
 			break
@@ -785,17 +667,30 @@ func (d *Driver) Create() error {
 			break
 		}
 
-		d.debugf("cloning template id '%s' as vmid '%s'", d.CloneVMID, clone.Newid)
+		d.debugf("cloning template id '%s' as vmid '%s'", d.CloneVMID, clone.NewID)
 
-		taskid, err := d.NodesNodeQemuVMIDClonePost(d.Node, d.CloneVMID, &clone)
+		node, err := d.client.Node(context.Background(), d.Node)
+
+		cloneVmId, err := strconv.Atoi(d.CloneVMID)
 		if err != nil {
 			return err
 		}
 
-		err = d.WaitForTaskToComplete(d.Node, taskid)
+		clonevm, err := node.VirtualMachine(context.Background(), cloneVmId)
+
+		newId, task, err := clonevm.Clone(context.Background(), clone)
 		if err != nil {
 			return err
 		}
+
+		// wait for the clone task
+		if err := task.Wait(context.Background(), time.Duration(5*time.Second), time.Duration(300*time.Second)); err != nil {
+			return err
+		}
+
+		// explicity set vmid after clone completion to be sure
+		d.VMID = string(newId)
+		d.VMID_int = newId
 
 		// resize
 		resize := NodesNodeQemuVMIDResizePutParameter{
