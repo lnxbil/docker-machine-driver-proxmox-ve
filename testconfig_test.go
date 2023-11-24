@@ -5,7 +5,6 @@ package main_test
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"log"
 	"os"
 	"sync"
@@ -29,7 +28,7 @@ var once sync.Once
 // GetProxmoxConfigInstance loads default config
 func GetProxmoxConfigInstance() *ProxmoxConfig {
 	once.Do(func() {
-		content, err := ioutil.ReadFile("testconfig.json")
+		content, err := os.ReadFile("testconfig.json")
 
 		if err != nil {
 			log.Fatal(err)
