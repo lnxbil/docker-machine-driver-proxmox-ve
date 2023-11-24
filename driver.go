@@ -668,9 +668,12 @@ func (d *Driver) Create() error {
 	}
 
 	id, err := cluster.NextID(context.Background())
+	if err != nil {
+		return err
+	}
 
 	d.debugf("Next ID is '%s'", id)
-	d.VMID = string(id)
+	d.VMID = fmt.Sprint(id)
 	d.VMID_int = id
 
 	var newVM proxmox.VirtualMachine
@@ -703,6 +706,9 @@ func (d *Driver) Create() error {
 		d.debugf("cloning template id '%s' as vmid '%s'", d.CloneVMID, clone.NewID)
 
 		node, err := d.client.Node(context.Background(), d.Node)
+		if err != nil {
+			return err
+		}
 
 		cloneVmId, err := strconv.Atoi(d.CloneVMID)
 		if err != nil {
@@ -710,6 +716,9 @@ func (d *Driver) Create() error {
 		}
 
 		clonevm, err := node.VirtualMachine(context.Background(), cloneVmId)
+		if err != nil {
+			return err
+		}
 
 		newId, task, err := clonevm.Clone(context.Background(), clone)
 		if err != nil {
@@ -722,7 +731,7 @@ func (d *Driver) Create() error {
 		}
 
 		// explicity set vmid after clone completion to be sure
-		d.VMID = string(newId)
+		d.VMID = fmt.Sprint(newId)
 		d.VMID_int = newId
 
 		// resize
@@ -739,7 +748,7 @@ func (d *Driver) Create() error {
 
 		d.ConfigureVM("Agent", "1")
 		d.ConfigureVM("Autostart", "1")
-		d.ConfigureVM("Memory", string(d.Memory))
+		d.ConfigureVM("Memory", fmt.Sprint(d.Memory))
 		d.ConfigureVM("Sockets", d.CPUSockets)
 		d.ConfigureVM("Cores", d.CPUCores)
 		d.ConfigureVM("KVM", "1")
