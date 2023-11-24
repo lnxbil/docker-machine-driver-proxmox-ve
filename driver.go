@@ -9,10 +9,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	mrand "math/rand"
 	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -71,7 +69,6 @@ type Driver struct {
 	VMID          string // VM ID only filled by create()
 	VMID_int      int    // Same as VMID but int
 	VMIDRange     string // acceptable range of VMIDs
-	VMUUID        string // UUID to confirm
 	CloneVMID     string // VM ID to clone
 	CloneFull     int    // Make a full (detached) clone from parent (defaults to true if VMID is not a template, otherwise false)
 	GuestUsername string // user to log into the guest OS to copy the public key
@@ -410,6 +407,29 @@ func (d *Driver) GetNode() (*proxmox.Node, error) {
 	return n, err
 }
 
+func (d *Driver) ConfigureVM(name string, value string) error {
+	vm, err := d.GetVM()
+	if err != nil {
+		return err
+	}
+	var config proxmox.VirtualMachineOption
+	config.Name = name
+	config.Value = value
+
+	configTask, err2 := vm.Config(context.Background(), config)
+
+	if err2 != nil {
+		return err2
+	}
+
+	// wait for the config task
+	if err4 := configTask.Wait(context.Background(), time.Duration(5*time.Second), time.Duration(300*time.Second)); err4 != nil {
+		return err4
+	}
+
+	return nil
+}
+
 func (d *Driver) OperateVM(operation string) error {
 
 	vm, err := d.GetVM()
@@ -638,13 +658,6 @@ func (d *Driver) Create() error {
 	key = fmt.Sprintf("%s %s-%d", key, d.MachineName, time.Now().Unix())
 	// !! End workaround for MC-7982.
 
-	// add some random wait time here to help with race conditions in the proxmox api
-	// the app could be getting invoked several times in rapid succession so some small waits may be helpful
-	mrand.Seed(time.Now().UnixNano()) // Seed the random number generator using the current time (nanoseconds since epoch)
-	r := mrand.Intn(5000)
-	d.debugf("sleeping %d milliseconds before retrieving next ID", r)
-	time.Sleep(time.Duration(r) * time.Millisecond)
-
 	// get next available VMID
 	// NOTE: we want to lock in the ID as quickly as possible after retrieving (ie: invoke QemuPost or Clone ASAP to avoid race conditions with other instances)
 	d.debug("Retrieving next ID")
@@ -659,6 +672,8 @@ func (d *Driver) Create() error {
 	d.debugf("Next ID is '%s'", id)
 	d.VMID = string(id)
 	d.VMID_int = id
+
+	var newVM proxmox.VirtualMachine
 
 	switch d.ProvisionStrategy {
 	case "clone":
@@ -711,59 +726,45 @@ func (d *Driver) Create() error {
 		d.VMID_int = newId
 
 		// resize
-		resize := NodesNodeQemuVMIDResizePutParameter{
-			Disk: "scsi0",
-			Size: d.DiskSize + "G",
-		}
-		d.debugf("resizing disk '%s' on vmid '%s' to '%s'", resize.Disk, d.VMID, resize.Size)
+		d.debugf("resizing disk '%s' on vmid '%s' to '%s'", "scsi0", d.VMID, d.DiskSize+"G")
 
-		err = d.NodesNodeQemuVMIDResizePut(d.Node, d.VMID, &resize)
-		if err != nil {
-			return err
+		vm, err4 := d.GetVM()
+		if err4 != nil {
+			return err4
+		}
+		err5 := vm.ResizeDisk(context.Background(), "scsi0", d.DiskSize+"G")
+		if err5 != nil {
+			return err5
 		}
 
-		// set config values
-		d.debugf("setting VM config values for vmid '%s'", d.VMID)
-		npp := NodesNodeQemuPostParameter{
-			Agent:      "1",
-			Autostart:  "1",
-			Memory:     d.Memory,
-			Sockets:    d.CPUSockets,
-			Cores:      d.CPUCores,
-			KVM:        "1", // if you test in a nested environment, you may have to change this to 0 if you do not have nested virtualization,
-			Citype:     d.Citype,
-			Onboot:     d.Onboot,
-			Protection: d.Protection,
-		}
+		d.ConfigureVM("Agent", "1")
+		d.ConfigureVM("Autostart", "1")
+		d.ConfigureVM("Memory", string(d.Memory))
+		d.ConfigureVM("Sockets", d.CPUSockets)
+		d.ConfigureVM("Cores", d.CPUCores)
+		d.ConfigureVM("KVM", "1")
+		d.ConfigureVM("Citype", d.Citype)
+		d.ConfigureVM("Onboot", d.Onboot)
+		d.ConfigureVM("Protection", d.Protection)
 
 		if len(d.NetBridge) > 0 {
-			npp.Net0, _ = d.generateNetString()
+			d.ConfigureVM("Net0", d.generateNetString())
 		}
 
 		if len(d.NUMA) > 0 {
-			npp.NUMA = d.NUMA
+			d.ConfigureVM("NUMA", d.NUMA)
 		}
 
 		if len(d.CPU) > 0 {
-			npp.CPU = d.CPU
-		}
-
-		taskid, err = d.NodesNodeQemuVMIDConfigPost(d.Node, d.VMID, &npp)
-		if err != nil {
-			return err
+			d.ConfigureVM("CPU", d.CPU)
 		}
 
 		// append newly minted ssh key to existing (if any)
 		d.debugf("retrieving existing cloud-init sshkeys from vmid '%s'", d.VMID)
-		config, err := d.GetConfig(d.Node, d.CloneVMID)
-		if err != nil {
-			return err
-		}
-
 		var SSHKeys string
 
-		if len(config.Data.SSHKeys) > 0 {
-			SSHKeys, err = url.QueryUnescape(config.Data.SSHKeys)
+		if len(vm.VirtualMachineConfig.SSHKeys) > 0 {
+			SSHKeys, err = url.QueryUnescape(vm.VirtualMachineConfig.SSHKeys)
 			if err != nil {
 				return err
 			}
@@ -777,27 +778,26 @@ func (d *Driver) Create() error {
 
 		// specially handle setting sshkeys
 		// https://forum.proxmox.com/threads/how-to-use-pvesh-set-vms-sshkeys.52570/
-		taskid, err = d.NodesNodeQemuVMIDConfigSetSSHKeys(d.Node, d.VMID, SSHKeys)
-		if err != nil {
-			return err
+		newVM, err2 := d.GetVM()
+		log.Debug(newVM.VMID)
+		if err2 != nil {
+			return err2
 		}
 
-		err = d.WaitForTaskToComplete(d.Node, taskid)
-		if err != nil {
-			return err
+		r := strings.NewReplacer("+", "%2B", "=", "%3D", "@", "%40")
+
+		SSHKeys = url.PathEscape(SSHKeys)
+		SSHKeys = r.Replace(SSHKeys)
+
+		err3 := d.ConfigureVM("sshkeys", SSHKeys)
+		if err3 != nil {
+			return err3
 		}
+
 		break
 	default:
 		return fmt.Errorf("invalid provision strategy '%s'", d.ProvisionStrategy)
 	}
-
-	// Set the newly minted UUID
-	config, err := d.GetConfig(d.Node, d.VMID)
-	if err != nil {
-		return err
-	}
-	d.VMUUID = getUUIDFromSmbios1(config.Data.Smbios1)
-	d.debugf("VM created with uuid '%s'", d.VMUUID)
 
 	// start the VM
 	err = d.Start()
@@ -810,7 +810,7 @@ func (d *Driver) Create() error {
 	time.Sleep(10 * time.Second)
 
 	// wait for qemu-guest-agent
-	err = d.waitForQemuGuestAgent()
+	err = newVM.WaitForAgent(context.Background(), 300)
 	if err != nil {
 		return err
 	}
@@ -865,7 +865,7 @@ func (d *Driver) waitForNetwork() error {
 	return nil
 }
 
-func (d *Driver) generateNetString() (string, error) {
+func (d *Driver) generateNetString() string {
 	var net string = fmt.Sprintf("model=%s,bridge=%s", d.NetModel, d.NetBridge)
 	if d.NetVlanTag != 0 {
 		net = fmt.Sprintf(net+",tag=%d", d.NetVlanTag)
@@ -879,7 +879,7 @@ func (d *Driver) generateNetString() (string, error) {
 		net = fmt.Sprintf(net+",mtu=%s", d.NetMtu)
 	}
 
-	return net, nil
+	return net
 }
 
 func (d *Driver) prepareSSHWithPassword() error {
@@ -1069,9 +1069,4 @@ func GenKeyPair() (string, string, error) {
 
 	public := ssh.MarshalAuthorizedKey(pub)
 	return string(public), private.String(), nil
-}
-
-func getUUIDFromSmbios1(str string) string {
-	var re = regexp.MustCompile(`(?m)uuid=([\d\w-]{1,})[,]{0,1}.*$`)
-	return re.FindStringSubmatch(fmt.Sprintf("%s", str))[1]
 }
