@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
-	resty "gopkg.in/resty.v1"
 
 	sshrw "github.com/mosolovsa/go_cat_sshfilerw"
 
@@ -82,7 +81,6 @@ type Driver struct {
 	CPUSockets    string // The number of cpu sockets.
 	CPUCores      string // The number of cores per socket.
 	driverDebug   bool   // driver debugging
-	restyDebug    bool   // enable resty debugging
 }
 
 func (d *Driver) debugf(format string, v ...interface{}) {
@@ -225,7 +223,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  "",
 		},
 		mcnflag.StringFlag{
-			EnvVar: "PROXMOXVE_VM_CLONE_VNID",
+			EnvVar: "PROXMOXVE_VM_CLONE_VMID",
 			Name:   "proxmoxve-vm-clone-vmid",
 			Usage:  "vmid to clone",
 			Value:  "",
@@ -315,34 +313,11 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  22,
 		},
 		mcnflag.BoolFlag{
-			EnvVar: "PROXMOXVE_DEBUG_RESTY",
-			Name:   "proxmoxve-debug-resty",
-			Usage:  "enables the resty debugging",
-		},
-		mcnflag.BoolFlag{
 			EnvVar: "PROXMOXVE_DEBUG_DRIVER",
 			Name:   "proxmoxve-debug-driver",
 			Usage:  "enables debugging in the driver",
 		},
 	}
-}
-
-func (d *Driver) ping() bool {
-	if d == nil {
-		return false
-	}
-
-	proxmox.VirtualMachine()
-
-	command := NodesNodeQemuVMIDAgentPostParameter{Command: "ping"}
-	err := d.NodesNodeQemuVMIDAgentPost(d.Node, d.VMID, &command)
-
-	if err != nil {
-		d.debug(err)
-		return false
-	}
-
-	return true
 }
 
 // DriverName returns the name of the driver
@@ -397,19 +372,6 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.GuestUsername = flags.String("proxmoxve-ssh-username")
 	d.GuestPassword = flags.String("proxmoxve-ssh-password")
 
-	//SWARM Settings
-	d.SwarmMaster = flags.Bool("swarm-master")
-	d.SwarmHost = flags.String("swarm-host")
-
-	//Debug option
-	d.restyDebug = flags.Bool("proxmoxve-debug-resty")
-
-	if d.restyDebug {
-		d.debug("enabling Resty debugging")
-		resty.SetLogger(log.Output())
-		resty.SetDebug(true)
-	}
-
 	return nil
 }
 
@@ -440,23 +402,53 @@ func (d *Driver) GetNetVlanTag() int {
 	return d.NetVlanTag
 }
 
+func (d *Driver) GetNode() (*proxmox.Node, error) {
+	n, err := d.client.Node(context.Background(), d.Node)
+	if err != nil {
+		return nil, err
+	}
+	return n, err
+}
+
+func (d *Driver) GetVM() (*proxmox.VirtualMachine, error) {
+	n, err := d.GetNode()
+	if err != nil {
+		return nil, err
+	}
+	vm, err2 := n.VirtualMachine(context.Background(), d.VMID_int)
+	if err2 != nil {
+		return nil, err2
+	}
+	return vm, err
+}
+
 // GetIP returns the ip
 func (d *Driver) GetIP() (string, error) {
-	d.connectApi()
+	vm, err := d.GetVM()
 
-	ip, err := d.GetEth0IPv4(d.Node, d.VMID)
-	if err != nil {
-		// TODO: should we return the cached IP here?
-		return ip, err
+	if err := vm.WaitForAgent(context.Background(), 300); err != nil {
+		return "", err
+	}
+	net := vm.VirtualMachineConfig.Net0
+	iFaces, err3 := vm.AgentGetNetworkIFaces(context.Background())
+	if err3 != nil {
+		return "", err3
+	}
+	for _, iface := range iFaces {
+		if strings.Contains(strings.ToLower(net), strings.ToLower(iface.HardwareAddress)) {
+			for _, ip := range iface.IPAddresses {
+				if ip.IPAddressType == "ipv4" {
+					d.IPAddress = ip.IPAddress
+				}
+			}
+		}
 	}
 
-	// set/update IP if success
-	if d.IPAddress != ip {
-		d.debugf("driver IP is set as '%s'", ip)
-		d.IPAddress = ip
+	if d.IPAddress == "" {
+		return "", err
 	}
 
-	return ip, err
+	return d.IPAddress, err
 }
 
 // GetSSHHostname returns the ssh host returned by the API
@@ -476,66 +468,35 @@ func (d *Driver) GetSSHUsername() string {
 
 // GetState returns the state of the VM
 func (d *Driver) GetState() (state.State, error) {
-	if len(d.VMID) < 1 {
-		return state.Error, errors.New("invalid VMID")
-	}
-
-	client, err := d.connectApi()
+	vm, err := d.GetVM()
 	if err != nil {
-		return state.Error, err
+		return state.None, err
 	}
 
-	// sanity check the UUID
-	node, err := client.Node(context.Background(), d.Node)
-	node.VirtualMachine(context.Background(), d.VMID)
-	config, err := client.GetConfig(d.Node, d.VMID)
-	if err != nil {
-		return state.Error, err
+	if err := vm.Ping(context.Background()); err != nil {
+		return state.None, err
 	}
 
-	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
-	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
-		return state.Error, fmt.Errorf("UUID mismatch - %s (stored) vs %s (current)", d.VMUUID, cVMMUUID)
+	if vm.IsStopped() {
+		return state.Stopped, nil
 	}
 
-	//Starting
-	//Running
-	//Stopped
-	//Paused
-	//Error
-
-	ip, err := d.GetIP()
-
-	// only consider fully running when IP is available
-	if err == nil && len(ip) > 0 {
+	if vm.IsRunning() {
 		return state.Running, nil
 	}
 
-	// starting if qemu-guest-agent is available but no IP
-	if d.ping() {
-		return state.Starting, nil
-	}
-
-	pveState, err := d.NodesNodeQemuVMIDStatusCurrentGet(d.Node, d.VMID)
-	if err != nil {
-		return state.Error, err
-	}
-
-	switch pveState {
-	case "stopped":
-		return state.Stopped, nil
-	case "running":
-		return state.Starting, nil
-	}
-
-	return state.Error, fmt.Errorf("unkown error detecting VM state")
+	return state.None, nil
 }
 
 // PreCreateCheck is called to enforce pre-creation steps
 func (d *Driver) PreCreateCheck() error {
 
 	if d.client == nil {
-		d.client = d.connectApi()
+		client, err := d.connectApi()
+		if err != nil {
+			return err
+		}
+		d.client = client
 	}
 
 	switch d.ProvisionStrategy {
