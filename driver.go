@@ -1,12 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/url"
@@ -15,16 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/ssh"
-
-	sshrw "github.com/mosolovsa/go_cat_sshfilerw"
-
-	"github.com/docker/machine/libmachine/drivers"
-	"github.com/docker/machine/libmachine/mcnflag"
-	mssh "github.com/docker/machine/libmachine/ssh"
-	"github.com/docker/machine/libmachine/state"
 	"github.com/labstack/gommon/log"
 	"github.com/luthermonson/go-proxmox"
+
+	"github.com/rancher/machine/libmachine/drivers"
+	"github.com/rancher/machine/libmachine/mcnflag"
+	"github.com/rancher/machine/libmachine/ssh"
+	"github.com/rancher/machine/libmachine/state"
 )
 
 // Driver for Proxmox VE
@@ -78,6 +70,17 @@ type Driver struct {
 	CPUSockets    string // The number of cpu sockets.
 	CPUCores      string // The number of cores per socket.
 	driverDebug   bool   // driver debugging
+}
+
+// NewDriver returns a new driver
+func NewDriver(hostName, storePath string) drivers.Driver {
+	return &Driver{
+		BaseDriver: &drivers.BaseDriver{
+			SSHUser:     "docker",
+			MachineName: hostName,
+			StorePath:   storePath,
+		},
+	}
 }
 
 func (d *Driver) debugf(format string, v ...interface{}) {
@@ -834,17 +837,7 @@ func (d *Driver) Create() error {
 
 	}
 
-	switch d.ProvisionStrategy {
-	case "cdrom":
-		if len(d.GuestPassword) > 0 {
-			return d.prepareSSHWithPassword()
-		}
-		return nil
-	case "clone":
-		fallthrough
-	default:
-		return nil
-	}
+	return nil
 }
 
 func (d *Driver) waitForNetwork() error {
@@ -889,59 +882,6 @@ func (d *Driver) generateNetString() string {
 	}
 
 	return net
-}
-
-func (d *Driver) prepareSSHWithPassword() error {
-	sshConfig := &ssh.ClientConfig{
-		User: d.GetSSHUsername(),
-		Auth: []ssh.AuthMethod{
-			ssh.Password(d.GuestPassword)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-
-	sshbasedir := "/home/" + d.GetSSHUsername() + "/.ssh"
-	hostname, _ := d.GetSSHHostname()
-	port, _ := d.GetSSHPort()
-	clientstr := fmt.Sprintf("%s:%d", hostname, port)
-
-	d.debugf("Creating directory '%s'", sshbasedir)
-	conn, err := ssh.Dial("tcp", clientstr, sshConfig)
-	if err != nil {
-		return err
-	}
-	session, err := conn.NewSession()
-	if err != nil {
-		return err
-	}
-
-	var stdoutBuf bytes.Buffer
-	session.Stdout = &stdoutBuf
-	session.Run("mkdir -p " + sshbasedir)
-	d.debugf(fmt.Sprintf("%s -> %s", hostname, stdoutBuf.String()))
-	session.Close()
-
-	d.debugf("Trying to copy to %s:%s", clientstr, sshbasedir)
-	c, err := sshrw.NewSSHclt(clientstr, sshConfig)
-	if err != nil {
-		return err
-	}
-
-	// Open a file
-	f, err := os.Open(d.GetSSHKeyPath() + ".pub")
-	if err != nil {
-		return err
-	}
-
-	// TODO: always fails with return status 127, but file was copied correclty
-	c.WriteFile(f, sshbasedir+"/authorized_keys")
-	// if err = c.WriteFile(f, sshbasedir+"/authorized_keys"); err != nil {
-	// 	d.debugf("Error on file write: ", err)
-	// }
-
-	// Close the file after it has been copied
-	defer f.Close()
-
-	return err
 }
 
 // Start starts the VM
@@ -993,89 +933,17 @@ func (d *Driver) Remove() error {
 	return nil
 }
 
-// Upgrade is currently a NOOP
-func (d *Driver) Upgrade() error {
-	return nil
-}
-
-// NewDriver returns a new driver
-func NewDriver(hostName, storePath string) drivers.Driver {
-	return &Driver{
-		BaseDriver: &drivers.BaseDriver{
-			SSHUser:     "docker",
-			MachineName: hostName,
-			StorePath:   storePath,
-		},
-	}
-}
-
 func (d *Driver) createSSHKey() (string, error) {
-	sshKeyPath := d.ResolveStorePath("id_rsa")
-	if err := mssh.GenerateSSHKey(sshKeyPath); err != nil {
+	var sshKeyPath string
+	sshKeyPath = d.GetSSHKeyPath()
+
+	if err := ssh.GenerateSSHKey(sshKeyPath); err != nil {
 		return "", err
 	}
+
 	key, err := os.ReadFile(sshKeyPath + ".pub")
 	if err != nil {
 		return "", err
 	}
 	return string(key), nil
-}
-
-// GetKeyPair returns a public/private key pair and an optional error
-func GetKeyPair(file string) (string, string, error) {
-	// read keys from file
-	_, err := os.Stat(file)
-	if err == nil {
-		priv, err := os.ReadFile(file)
-		if err != nil {
-			fmt.Printf("Failed to read file - %s", err)
-			goto genKeys
-		}
-		pub, err := os.ReadFile(file + ".pub")
-		if err != nil {
-			fmt.Printf("Failed to read pub file - %s", err)
-			goto genKeys
-		}
-		return string(pub), string(priv), nil
-	}
-
-	// generate keys and save to file
-genKeys:
-	pub, priv, err := GenKeyPair()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to gen keypair - %s", err)
-	}
-	err = os.WriteFile(file, []byte(priv), 0600)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to write file - %s", err)
-	}
-	err = os.WriteFile(file+".pub", []byte(pub), 0644)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to write pub file - %s", err)
-	}
-
-	return pub, priv, nil
-}
-
-// GenKeyPair returns a freshly created public/private key pair and an optional error
-func GenKeyPair() (string, string, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return "", "", err
-	}
-
-	privateKeyPEM := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
-	var private bytes.Buffer
-	if err := pem.Encode(&private, privateKeyPEM); err != nil {
-		return "", "", err
-	}
-
-	// generate public key
-	pub, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return "", "", err
-	}
-
-	public := ssh.MarshalAuthorizedKey(pub)
-	return string(public), private.String(), nil
 }

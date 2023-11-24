@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/docker/machine/libmachine/drivers/plugin"
+	"github.com/rancher/machine/libmachine/drivers/plugin"
 )
 
 func main() {

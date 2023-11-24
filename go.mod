@@ -1,14 +1,11 @@
 module github.com/deepshore/docker-machine-driver-proxmoxve
 
-go 1.20
+go 1.19
 
 require (
-	github.com/docker/machine v0.16.2
 	github.com/labstack/gommon v0.4.1
 	github.com/luthermonson/go-proxmox v0.0.0-beta2
-	github.com/mosolovsa/go_cat_sshfilerw v0.0.0-20170307095915-3f6912dbd9e4
-	golang.org/x/crypto v0.15.0
-	gopkg.in/resty.v1 v1.12.0
+	github.com/rancher/machine v0.15.0-rancher98
 )
 
 require (
@@ -24,8 +21,8 @@ require (
 	github.com/moby/term v0.5.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
-	golang.org/x/net v0.10.0 // indirect
+	golang.org/x/crypto v0.0.0-20220411220226-7b82a4e95df4 // indirect
 	golang.org/x/sys v0.14.0 // indirect
-	golang.org/x/term v0.14.0 // indirect
+	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
 	gopkg.in/djherbis/times.v1 v1.2.0 // indirect
 )
