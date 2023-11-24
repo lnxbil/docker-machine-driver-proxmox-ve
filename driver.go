@@ -410,7 +410,64 @@ func (d *Driver) GetNode() (*proxmox.Node, error) {
 	return n, err
 }
 
+func (d *Driver) OperateVM(operation string) error {
+
+	vm, err := d.GetVM()
+	if err != nil {
+		return err
+	}
+
+	var task proxmox.Task
+	var err2 error
+
+	switch operation {
+	case "start":
+		task, err2 := vm.Start(context.Background())
+		log.Debug(task.ID)
+		if err2 != nil {
+			return err2
+		}
+	case "stop":
+		task, err2 := vm.Stop(context.Background())
+		log.Debug(task.ID)
+		if err2 != nil {
+			return err2
+		}
+	case "kill":
+		task, err2 := vm.Stop(context.Background())
+		log.Debug(task.ID)
+		if err2 != nil {
+			return err2
+		}
+	case "restart":
+		task, err2 := vm.Reset(context.Background())
+		log.Debug(task.ID)
+		if err2 != nil {
+			return err2
+		}
+	default:
+		return errors.New("Invalid operation: " + operation)
+
+	}
+
+	if err2 != nil {
+		return err2
+	}
+
+	// wait for the start task
+	if err2 := task.Wait(context.Background(), time.Duration(5*time.Second), time.Duration(300*time.Second)); err2 != nil {
+		return err2
+	}
+
+	return err
+
+}
+
 func (d *Driver) GetVM() (*proxmox.VirtualMachine, error) {
+	if len(d.VMID) < 1 {
+		return nil, errors.New("invalid VMID")
+	}
+
 	n, err := d.GetNode()
 	if err != nil {
 		return nil, err
@@ -781,17 +838,6 @@ func (d *Driver) Create() error {
 	}
 }
 
-func (d *Driver) waitForQemuGuestAgent() error {
-	d.debugf("waiting for VM qemu-guest-agent to start")
-	d.connectApi()
-	for !d.ping() {
-		d.debugf("waiting for VM qemu-guest-agent to start")
-		time.Sleep(5 * time.Second)
-	}
-
-	return nil
-}
-
 func (d *Driver) waitForNetwork() error {
 	d.debugf("waiting for VM network to start")
 	d.connectApi()
@@ -801,7 +847,7 @@ func (d *Driver) waitForNetwork() error {
 	var err error
 
 	for !up {
-		ip, err = d.GetEth0IPv4(d.Node, d.VMID)
+		ip, err = d.GetIP()
 		if err != nil {
 			d.debugf("waiting for VM network to start")
 			time.Sleep(5 * time.Second)
@@ -891,141 +937,26 @@ func (d *Driver) prepareSSHWithPassword() error {
 
 // Start starts the VM
 func (d *Driver) Start() error {
-	if len(d.VMID) < 1 {
-		return errors.New("invalid VMID")
-	}
-
-	err := d.connectApi()
-	if err != nil {
-		return err
-	}
-
-	// sanity check the UUID
-	config, err := d.GetConfig(d.Node, d.VMID)
-	if err != nil {
-		return err
-	}
-
-	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
-	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
-		return fmt.Errorf("UUID mismatch - %s (stored) vs %s (current)", d.VMUUID, cVMMUUID)
-	}
-
-	taskid, err := d.NodesNodeQemuVMIDStatusStartPost(d.Node, d.VMID)
-	if err != nil {
-		return err
-	}
-
-	err = d.WaitForTaskToComplete(d.Node, taskid)
-
-	return err
+	return d.OperateVM("start")
 }
 
 // Stop stopps the VM
 func (d *Driver) Stop() error {
-	if len(d.VMID) < 1 {
-		return errors.New("invalid VMID")
-	}
-
-	err := d.connectApi()
-	if err != nil {
-		return err
-	}
-
-	// sanity check the UUID
-	config, err := d.GetConfig(d.Node, d.VMID)
-	if err != nil {
-		return err
-	}
-
-	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
-	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
-		return fmt.Errorf("UUID mismatch - %s (stored) vs %s (current)", d.VMUUID, cVMMUUID)
-	}
-
-	// shutdown
-	taskid, err := d.NodesNodeQemuVMIDStatusShutdownPost(d.Node, d.VMID)
-	if err != nil {
-		return err
-	}
-
-	err = d.WaitForTaskToComplete(d.Node, taskid)
-
-	return err
+	return d.OperateVM("stop")
 }
 
 // Restart restarts the VM
 func (d *Driver) Restart() error {
-	if len(d.VMID) < 1 {
-		return errors.New("invalid VMID")
-	}
-
-	err := d.connectApi()
-	if err != nil {
-		return err
-	}
-
-	// sanity check the UUID
-	config, err := d.GetConfig(d.Node, d.VMID)
-	if err != nil {
-		return err
-	}
-
-	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
-	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
-		return fmt.Errorf("UUID mismatch - %s (stored) vs %s (current)", d.VMUUID, cVMMUUID)
-	}
-
-	// reboot
-	taskid, err := d.NodesNodeQemuVMIDStatusRebootPost(d.Node, d.VMID)
-	if err != nil {
-		return err
-	}
-
-	err = d.WaitForTaskToComplete(d.Node, taskid)
-
-	return err
+	return d.OperateVM("restart")
 }
 
 // Kill the VM immediately
 func (d *Driver) Kill() error {
-	if len(d.VMID) < 1 {
-		return errors.New("invalid VMID")
-	}
-
-	err := d.connectApi()
-	if err != nil {
-		return err
-	}
-
-	// sanity check the UUID
-	config, err := d.GetConfig(d.Node, d.VMID)
-	if err != nil {
-		return err
-	}
-
-	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
-	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
-		return fmt.Errorf("UUID mismatch - %s (stored) vs %s (current)", d.VMUUID, cVMMUUID)
-	}
-
-	// stop
-	taskid, err := d.NodesNodeQemuVMIDStatusStopPost(d.Node, d.VMID)
-	if err != nil {
-		return err
-	}
-
-	err = d.WaitForTaskToComplete(d.Node, taskid)
-
-	return err
+	return d.OperateVM("kill")
 }
 
 // Remove removes the VM
 func (d *Driver) Remove() error {
-	if len(d.VMID) < 1 {
-		return nil
-	}
-
 	vm, err := d.GetVM()
 	if err != nil {
 		return err
