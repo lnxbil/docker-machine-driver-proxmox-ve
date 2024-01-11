@@ -2,6 +2,7 @@ package dockermachinedriverproxmoxve
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -27,12 +28,17 @@ import (
 	mssh "github.com/docker/machine/libmachine/ssh"
 	"github.com/docker/machine/libmachine/state"
 	"github.com/labstack/gommon/log"
+
+	"github.com/FreekingDean/proxmox-api-go/proxmox"
+	"github.com/FreekingDean/proxmox-api-go/proxmox/access"
+	"github.com/FreekingDean/proxmox-api-go/proxmox/nodes/qemu/agent"
+	"github.com/FreekingDean/proxmox-api-go/proxmox/nodes/qemu/status"
 )
 
 // Driver for Proxmox VE
 type Driver struct {
 	*drivers.BaseDriver
-	driver *ProxmoxVE
+	client *proxmox.Client
 
 	// Top-level strategy for proisioning a new node
 	ProvisionStrategy string
@@ -69,7 +75,7 @@ type Driver struct {
 	ScsiController string
 	ScsiAttributes string
 
-	VMID          string // VM ID only filled by create()
+	VMID          int    // VM ID only filled by create()
 	VMIDRange     string // acceptable range of VMIDs
 	VMUUID        string // UUID to confirm
 	CloneVMID     string // VM ID to clone
@@ -96,22 +102,28 @@ func (d *Driver) debug(v ...interface{}) {
 	}
 }
 
-func (d *Driver) connectAPI() error {
-	if d.driver == nil {
-		d.debugf("Create called")
-
-		d.debugf("Connecting to %s as %s@%s with password '%s'", d.Host, d.User, d.Realm, d.Password)
-		c, err := GetProxmoxVEConnectionByValues(d.User, d.Password, d.Realm, d.Host)
-		d.driver = c
-		if err != nil {
-			return fmt.Errorf("Could not connect to host '%s' with '%s@%s'", d.Host, d.User, d.Realm)
-		}
-		if d.restyDebug {
-			c.EnableDebugging()
-		}
-		d.debugf("Connected to PVE version '" + d.driver.Version + "'")
+func (d *Driver) EnsureClient() (*proxmox.Client, error) {
+	if d.client != nil {
+		return d.client, nil
 	}
-	return nil
+	d.debugf("Create called")
+
+	d.debugf("Connecting to %s as %s@%s with password '%s'", d.Host, d.User, d.Realm, d.Password)
+	client := proxmox.NewClient(d.Host)
+	a := access.New(client)
+	ticket, err := a.CreateTicket(context.Background(), access.CreateTicketRequest{
+		Username: d.User,
+		Password: d.Password,
+		Realm:    &d.Realm,
+	})
+	if err != nil {
+		d.debugf("error retreiving ticket %s", err.Error())
+		return nil, err
+	}
+	client.SetCookie(*ticket.Ticket)
+	client.SetCsrf(*ticket.Csrfpreventiontoken)
+	d.client = client
+	return client, nil
 }
 
 // GetCreateFlags returns the argument flags for the program
@@ -328,21 +340,21 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 	}
 }
 
-func (d *Driver) ping() bool {
-	if d.driver == nil {
-		return false
-	}
-
-	command := NodesNodeQemuVMIDAgentPostParameter{Command: "ping"}
-	err := d.driver.NodesNodeQemuVMIDAgentPost(d.Node, d.VMID, &command)
-
-	if err != nil {
-		d.debug(err)
-		return false
-	}
-
-	return true
-}
+//func (d *Driver) ping() bool {
+//	if d.driver == nil {
+//		return false
+//	}
+//
+//	command := NodesNodeQemuVMIDAgentPostParameter{Command: "ping"}
+//	err := d.driver.NodesNodeQemuVMIDAgentPost(d.Node, d.VMID, &command)
+//
+//	if err != nil {
+//		d.debug(err)
+//		return false
+//	}
+//
+//	return true
+//}
 
 // DriverName returns the name of the driver
 func (d *Driver) DriverName() string {
@@ -402,13 +414,6 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 
 	//Debug option
 	d.driverDebug = flags.Bool("proxmoxve-debug-driver")
-	d.restyDebug = flags.Bool("proxmoxve-debug-resty")
-
-	if d.restyDebug {
-		d.debug("enabling Resty debugging")
-		resty.SetLogger(log.Output())
-		resty.SetDebug(true)
-	}
 
 	return nil
 }
@@ -418,9 +423,6 @@ func (d *Driver) GetURL() (string, error) {
 	ip, err := d.GetIP()
 	if err != nil {
 		return "", err
-	}
-	if ip == "" {
-		return "", nil
 	}
 	return fmt.Sprintf("tcp://%s:2376", ip), nil
 }
@@ -440,25 +442,6 @@ func (d *Driver) GetNetVlanTag() int {
 	return d.NetVlanTag
 }
 
-// GetIP returns the ip
-func (d *Driver) GetIP() (string, error) {
-	d.connectAPI()
-
-	ip, err := d.driver.GetEth0IPv4(d.Node, d.VMID)
-	if err != nil {
-		// TODO: should we return the cached IP here?
-		return ip, err
-	}
-
-	// set/update IP if success
-	if d.IPAddress != ip {
-		d.debugf("driver IP is set as '%s'", ip)
-		d.IPAddress = ip
-	}
-
-	return ip, err
-}
-
 // GetSSHHostname returns the ssh host returned by the API
 func (d *Driver) GetSSHHostname() (string, error) {
 	return d.GetIP()
@@ -476,128 +459,77 @@ func (d *Driver) GetSSHUsername() string {
 
 // GetState returns the state of the VM
 func (d *Driver) GetState() (state.State, error) {
-	if len(d.VMID) < 1 {
+	if d.VMID < 1 {
 		return state.Error, errors.New("invalid VMID")
 	}
 
-	err := d.connectAPI()
+	c, err := d.EnsureClient()
 	if err != nil {
 		return state.Error, err
 	}
 
-	// sanity check the UUID
-	config, err := d.driver.GetConfig(d.Node, d.VMID)
-	if err != nil {
-		return state.Error, err
+	s := status.New(c)
+	resp, err := s.VmStatusCurrent(context.Background(), status.VmStatusCurrentRequest{
+		Node: d.Node,
+		Vmid: d.VMID,
+	})
+	if resp.Status == status.Status_STOPPED {
+		return state.Stopped, nil
 	}
-
-	cVMMUUID := getUUIDFromSmbios1(config.Data.Smbios1)
-	if len(d.VMUUID) > 1 && d.VMUUID != cVMMUUID {
-		return state.Error, fmt.Errorf("UUID mismatch - %s (stored) vs %s (current)", d.VMUUID, cVMMUUID)
-	}
-
-	//Starting
-	//Running
-	//Stopped
-	//Paused
-	//Error
-
-	ip, err := d.GetIP()
-
-	// only consider fully running when IP is available
-	if err == nil && len(ip) > 0 {
+	if resp.Status == status.Status_RUNNING {
 		return state.Running, nil
 	}
-
-	// starting if qemu-guest-agent is available but no IP
-	if d.ping() {
-		return state.Starting, nil
-	}
-
-	pveState, err := d.driver.NodesNodeQemuVMIDStatusCurrentGet(d.Node, d.VMID)
-	if err != nil {
-		return state.Error, err
-	}
-
-	switch pveState {
-	case "stopped":
-		return state.Stopped, nil
-	case "running":
-		return state.Starting, nil
-	}
-
-	return state.Error, fmt.Errorf("unkown error detecting VM state")
+	return state.Error, nil
 }
 
 // PreCreateCheck is called to enforce pre-creation steps
 func (d *Driver) PreCreateCheck() error {
-
-	err := d.connectAPI()
+	_, err := d.EnsureClient()
 	if err != nil {
 		return err
 	}
 
-	switch d.ProvisionStrategy {
-	case "cdrom":
-		// set defaults for cdrom
-		// replicating pre-clone behavior of setting a default on the parameter
-		if len(d.Storage) < 1 {
-			d.Storage = "local"
-		}
-
-		if len(d.StorageType) < 1 {
-			d.StorageType = "raw"
-		}
-
-		if len(d.NetBridge) < 1 {
-			d.NetBridge = "vmbr0"
-		}
-
-		if len(d.GuestUsername) < 1 {
-			d.GuestUsername = "docker"
-		}
-
-		if len(d.GuestPassword) < 1 {
-			d.GuestPassword = "tcuser"
-		}
-
-		// prepare StorageFilename
-		switch d.StorageType {
-		case "raw":
-			fallthrough
-		case "qcow2":
-			break
-		default:
-			return fmt.Errorf("storage type '%s' is not supported", d.StorageType)
-		}
-
-		storageType, err := d.driver.GetStorageType(d.Node, d.Storage)
-		if err != nil {
-			return err
-		}
-
-		filename := "-disk-0"
-		switch storageType {
-		case "lvmthin":
-			fallthrough
-		case "zfs":
-			fallthrough
-		case "ceph":
-			if d.StorageType != "raw" {
-				return fmt.Errorf("type '%s' on storage '%s' does only support raw", storageType, d.Storage)
-			}
-		case "nfs":
-			fallthrough
-		case "dir":
-			filename += "." + d.StorageType
-		}
-		// this is not the finale filename, it'll be constructed in Create()
-		d.StorageFilename = filename
-	case "clone":
-		break
-	default:
-		return fmt.Errorf("invalid provision strategy '%s'", d.ProvisionStrategy)
+	if len(d.Storage) < 1 {
+		d.Storage = "local"
 	}
+
+	if len(d.StorageType) < 1 {
+		d.StorageType = "qcow2"
+	}
+
+	if len(d.NetBridge) < 1 {
+		d.NetBridge = "vmbr0"
+	}
+
+	if d.StorageType != "raw" && d.StorageType != "qcow2" {
+		return fmt.Errorf("storage type '%s' is not supported", d.StorageType)
+	}
+	if d.ProvisionStrategy != "clone" && d.ProvisionStrategy != "cdrom" {
+		return fmt.Errorf("provision strategy '%s' is no supported", d.ProvisionStrategy)
+	}
+
+	//	storageType, err := d.driver.GetStorageType(d.Node, d.Storage)
+	//	if err != nil {
+	//		return err
+	//	}
+
+	//	filename := "-disk-0"
+	//	switch storageType {
+	//	case "lvmthin":
+	//		fallthrough
+	//	case "zfs":
+	//		fallthrough
+	//	case "ceph":
+	//		if d.StorageType != "raw" {
+	//			return fmt.Errorf("type '%s' on storage '%s' does only support raw", storageType, d.Storage)
+	//		}
+	//	case "nfs":
+	//		fallthrough
+	//	case "dir":
+	//		filename += "." + d.StorageType
+	//	}
+	//	// this is not the finale filename, it'll be constructed in Create()
+	//	d.StorageFilename = filename
 
 	return nil
 }
@@ -605,18 +537,7 @@ func (d *Driver) PreCreateCheck() error {
 // Create creates a new VM with storage
 func (d *Driver) Create() error {
 
-	// create and save a new SSH key pair
-	d.debug("creating new ssh keypair")
-	key, err := d.createSSHKey()
-	if err != nil {
-		return err
-	}
-
-	// !! Workaround for MC-7982.
-	key = strings.TrimSpace(key)
-	key = fmt.Sprintf("%s %s-%d", key, d.MachineName, time.Now().Unix())
-	// !! End workaround for MC-7982.
-
+	// key = d.generateKey()
 	// add some random wait time here to help with race conditions in the proxmox api
 	// the app could be getting invoked several times in rapid succession so some small waits may be helpful
 	mrand.Seed(time.Now().UnixNano()) // Seed the random number generator using the current time (nanoseconds since epoch)
@@ -629,41 +550,9 @@ func (d *Driver) Create() error {
 	d.debug("Retrieving next ID")
 
 	var id string
-	if len(d.VMIDRange) > 0 {
-		VMIDParts := strings.Split(d.VMIDRange, ":")
-		low, err := strconv.Atoi(VMIDParts[0])
-		if err != nil {
-			return err
-		}
-
-		var high = 0
-		if len(VMIDParts) > 1 {
-			high, err = strconv.Atoi(VMIDParts[1])
-			if err != nil {
-				return err
-			}
-		}
-
-		d.debugf("Looking for available VMID in range '%d:%d'", low, high)
-
-		var i = low
-		for len(id) < 1 {
-			id, err = d.driver.ClusterNextIDGet(i)
-			if err != nil && high > 0 && i > high {
-				return err
-			}
-
-			if high > 0 && i >= high {
-				return fmt.Errorf("no VMIDs available in range '%d:%d'", low, high)
-			}
-
-			i++
-		}
-	} else {
-		id, err = d.driver.ClusterNextIDGet(0)
-		if err != nil {
-			return err
-		}
+	id, err = d.driver.ClusterNextIDGet(0)
+	if err != nil {
+		return err
 	}
 
 	d.debugf("Next ID is '%s'", id)
@@ -1218,77 +1107,4 @@ func NewDriver(hostName, storePath string) drivers.Driver {
 			StorePath:   storePath,
 		},
 	}
-}
-
-func (d *Driver) createSSHKey() (string, error) {
-	sshKeyPath := d.ResolveStorePath("id_rsa")
-	if err := mssh.GenerateSSHKey(sshKeyPath); err != nil {
-		return "", err
-	}
-	key, err := ioutil.ReadFile(sshKeyPath + ".pub")
-	if err != nil {
-		return "", err
-	}
-	return string(key), nil
-}
-
-// GetKeyPair returns a public/private key pair and an optional error
-func GetKeyPair(file string) (string, string, error) {
-	// read keys from file
-	_, err := os.Stat(file)
-	if err == nil {
-		priv, err := ioutil.ReadFile(file)
-		if err != nil {
-			fmt.Printf("Failed to read file - %s", err)
-			goto genKeys
-		}
-		pub, err := ioutil.ReadFile(file + ".pub")
-		if err != nil {
-			fmt.Printf("Failed to read pub file - %s", err)
-			goto genKeys
-		}
-		return string(pub), string(priv), nil
-	}
-
-	// generate keys and save to file
-genKeys:
-	pub, priv, err := GenKeyPair()
-	err = ioutil.WriteFile(file, []byte(priv), 0600)
-	if err != nil {
-		return "", "", fmt.Errorf("Failed to write file - %s", err)
-	}
-	err = ioutil.WriteFile(file+".pub", []byte(pub), 0644)
-	if err != nil {
-		return "", "", fmt.Errorf("Failed to write pub file - %s", err)
-	}
-
-	return pub, priv, nil
-}
-
-// GenKeyPair returns a freshly created public/private key pair and an optional error
-func GenKeyPair() (string, string, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return "", "", err
-	}
-
-	privateKeyPEM := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
-	var private bytes.Buffer
-	if err := pem.Encode(&private, privateKeyPEM); err != nil {
-		return "", "", err
-	}
-
-	// generate public key
-	pub, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return "", "", err
-	}
-
-	public := ssh.MarshalAuthorizedKey(pub)
-	return string(public), private.String(), nil
-}
-
-func getUUIDFromSmbios1(str string) string {
-	var re = regexp.MustCompile(`(?m)uuid=([\d\w-]{1,})[,]{0,1}.*$`)
-	return re.FindStringSubmatch(fmt.Sprintf("%s", str))[1]
 }
